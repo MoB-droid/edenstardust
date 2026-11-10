@@ -8,7 +8,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,400&family=Inter:wght@400;500&display=swap">
 <style>
-  /* Layout: one full-bleed canvas of drifting dust, a quiet caption bottom-left. Single deliberate dark look. */
+  /* Layout: one full-bleed canvas of drifting dust with astronaut monkeys hopping between bright stars; quiet caption bottom-left. Single deliberate dark look. */
   :root {
     --void: #05060d;
     --dust-warm: #f3d9a4;
@@ -33,7 +33,7 @@
   p { margin: 0; font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
 </style>
 
-<canvas id="sky" aria-label="Animated field of stardust swirling around a faint glowing core"></canvas>
+<canvas id="sky" aria-label="Animated field of stardust with monkeys in astronaut suits jumping between bright stars"></canvas>
 <div class="caption">
   <h1>Stardust</h1>
   <p>Interstellar grains · 0.1–1 µm</p>
@@ -44,36 +44,180 @@
   const c = document.getElementById('sky');
   const ctx = c.getContext('2d');
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let w, h, dpr, grains = [], stars = [];
+  const TAU = Math.PI * 2;
+  let w, h, dpr, grains = [], stars = [], anchors = [], monkeys = [], size = 48;
 
-  function rand(a, b) { return a + Math.random() * (b - a); }
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const ease = p => p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
 
   function build() {
     dpr = Math.min(devicePixelRatio || 1, 2);
     w = innerWidth; h = innerHeight;
     c.width = w * dpr; c.height = h * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    size = Math.max(36, Math.min(Math.min(w, h) / 9, 72));
+
     const n = Math.round(Math.min(w * h / 450, 4000));
     const R = Math.max(w, h) * 0.55;
     grains = Array.from({ length: n }, () => {
       const arm = Math.floor(Math.random() * 3);
       const r = Math.pow(Math.random(), 0.7) * R;
-      const a = arm * (Math.PI * 2 / 3) + r / R * 4.2 + rand(-0.35, 0.35);
-      return {
-        r, a,
-        s: rand(0.3, 1.6) * (1 - r / R * 0.5),
-        speed: rand(0.00008, 0.0003) * (1.4 - r / R),
-        warm: Math.random() < 0.55,
-        tw: rand(0, Math.PI * 2)
-      };
+      const a = arm * (TAU / 3) + r / R * 4.2 + rand(-0.35, 0.35);
+      return { r, a, s: rand(0.3, 1.6) * (1 - r / R * 0.5), speed: rand(0.00008, 0.0003) * (1.4 - r / R), warm: Math.random() < 0.55, tw: rand(0, TAU) };
     });
-    stars = Array.from({ length: Math.round(w * h / 5000) }, () => ({
-      x: rand(0, w), y: rand(0, h), s: rand(0.3, 1.1), tw: rand(0, 6.28)
+    stars = Array.from({ length: Math.round(w * h / 5000) }, () => ({ x: rand(0, w), y: rand(0, h), s: rand(0.3, 1.1), tw: rand(0, TAU) }));
+
+    // Bright stars the monkeys land on, spread over a loose grid so they don't clump.
+    const cols = w < 600 ? 2 : 4, rows = 2;
+    anchors = [];
+    for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) {
+      anchors.push({
+        x: (i + rand(0.25, 0.75)) / cols * w,
+        y: h * 0.18 + (j + rand(0.3, 0.7)) / rows * h * 0.52,
+        tw: rand(0, TAU)
+      });
+    }
+    const count = w < 600 ? 2 : 4;
+    monkeys = Array.from({ length: count }, (_, i) => ({
+      at: i * Math.floor(anchors.length / count), to: -1, start: 0, dur: 0,
+      restUntil: performance.now() + rand(300, 1600), spin: 1, flips: 0, face: Math.random() < 0.5 ? 1 : -1, id: i
     }));
+  }
+
+  const restPos = a => ({ x: anchors[a].x, y: anchors[a].y - size * 0.5 });
+
+  function step(m, t) {
+    if (m.to >= 0) {
+      const p = (t - m.start) / m.dur;
+      if (p >= 1) { m.at = m.to; m.to = -1; m.restUntil = t + rand(600, 1600); }
+    } else if (t >= m.restUntil) {
+      const taken = new Set(monkeys.flatMap(o => [o.at, o.to]));
+      const free = anchors.map((_, i) => i).filter(i => !taken.has(i));
+      if (!free.length) { m.restUntil = t + 400; return; }
+      m.to = free[Math.floor(Math.random() * free.length)];
+      m.start = t; m.dur = rand(1300, 2100);
+      m.flips = Math.random() < 0.6 ? 1 : 0;
+      m.face = anchors[m.to].x >= anchors[m.at].x ? 1 : -1;
+      m.spin = m.face;
+    }
+  }
+
+  function placement(m, t) {
+    if (m.to < 0) {
+      const r = restPos(m.at);
+      return { x: r.x, y: r.y + Math.sin(t * 0.004 + m.id) * 1.5, rot: Math.sin(t * 0.003 + m.id) * 0.08, tuck: 0, wave: Math.sin(t * 0.008 + m.id) };
+    }
+    const p = Math.min((t - m.start) / m.dur, 1);
+    const A = restPos(m.at), B = restPos(m.to);
+    const e = ease(p);
+    const dist = Math.hypot(B.x - A.x, B.y - A.y);
+    return {
+      x: A.x + (B.x - A.x) * e,
+      y: A.y + (B.y - A.y) * e - Math.sin(Math.PI * p) * (dist * 0.35 + size),
+      rot: m.spin * m.flips * TAU * e,
+      tuck: Math.sin(Math.PI * p),
+      wave: 1
+    };
+  }
+
+  // Monkey in a space suit, drawn in a ~60-unit box centred on the body.
+  function drawMonkey(x, y, face, rot, tuck, wave) {
+    const k = size / 60;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    ctx.scale(k * face, k);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+    // tail poking out of the suit
+    ctx.strokeStyle = '#6b4226'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(-9, 14); ctx.quadraticCurveTo(-24, 20, -22, 6); ctx.quadraticCurveTo(-21, 0, -16, 2); ctx.stroke();
+
+    // backpack
+    ctx.fillStyle = '#b9bdcb';
+    roundRect(-16, -5, 10, 20, 3); ctx.fill();
+
+    // legs (tucked mid-jump)
+    const legA = 0.25 + tuck * 0.9;
+    ctx.strokeStyle = '#eef0f6'; ctx.lineWidth = 7;
+    for (const sgn of [-1, 1]) {
+      const hx = sgn * 5, hy = 18;
+      const fx = hx + Math.sin(sgn * legA) * 11, fy = hy + Math.cos(legA) * 11;
+      ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(fx, fy); ctx.stroke();
+      ctx.fillStyle = '#7d8396'; ctx.beginPath(); ctx.ellipse(fx + sgn * 1.5, fy + 1.5, 4.5, 3, 0, 0, TAU); ctx.fill();
+    }
+
+    // suit body
+    ctx.fillStyle = '#f4f5fa'; ctx.strokeStyle = '#9aa0b4'; ctx.lineWidth = 1.5;
+    roundRect(-11, -4, 22, 25, 8); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#c7cbd8'; roundRect(-5, 3, 10, 8, 2); ctx.fill();
+    ctx.fillStyle = '#e8574d'; ctx.beginPath(); ctx.arc(-2, 7, 1.4, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#4f8cff'; ctx.beginPath(); ctx.arc(2, 7, 1.4, 0, TAU); ctx.fill();
+
+    // arms: one waves while resting, both up mid-jump
+    ctx.strokeStyle = '#eef0f6'; ctx.lineWidth = 6;
+    for (const sgn of [-1, 1]) {
+      const lift = sgn === 1 ? wave : Math.max(wave, 0) * 0.4 + tuck * 0.6;
+      const sx = sgn * 10, sy = 1;
+      const hx = sx + sgn * 8, hy = sy + 8 - lift * 16;
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(hx, hy); ctx.stroke();
+      ctx.fillStyle = '#7d8396'; ctx.beginPath(); ctx.arc(hx, hy, 3.2, 0, TAU); ctx.fill();
+    }
+
+    // neck ring
+    ctx.fillStyle = '#9aa0b4'; roundRect(-8, -6, 16, 4, 2); ctx.fill();
+
+    // monkey head inside the helmet
+    ctx.fillStyle = '#7a4a2a';
+    ctx.beginPath(); ctx.arc(-9.5, -17, 4, 0, TAU); ctx.arc(9.5, -17, 4, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#e8c39e';
+    ctx.beginPath(); ctx.arc(-9.5, -17, 2, 0, TAU); ctx.arc(9.5, -17, 2, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#7a4a2a'; ctx.beginPath(); ctx.arc(0, -17, 8.5, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#e8c39e';
+    ctx.beginPath(); ctx.arc(-3.2, -19, 3.6, 0, TAU); ctx.arc(3.2, -19, 3.6, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, -13.5, 5.6, 4.2, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#1a1210';
+    ctx.beginPath(); ctx.arc(-3.2, -19, 1.4, 0, TAU); ctx.arc(3.2, -19, 1.4, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(-2.7, -19.5, 0.5, 0, TAU); ctx.arc(3.7, -19.5, 0.5, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#5a3520';
+    ctx.beginPath(); ctx.arc(-1.2, -14.5, 0.6, 0, TAU); ctx.arc(1.2, -14.5, 0.6, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#5a3520'; ctx.lineWidth = 0.9;
+    ctx.beginPath(); ctx.arc(0, -13, 2.6, 0.2 * Math.PI, 0.8 * Math.PI); ctx.stroke();
+
+    // glass helmet
+    ctx.fillStyle = 'rgba(170,200,255,0.16)'; ctx.strokeStyle = '#dfe6ff'; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.arc(0, -17, 14, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(0, -17, 10.5, 1.1 * Math.PI, 1.4 * Math.PI); ctx.stroke();
+    ctx.restore();
+  }
+
+  function roundRect(x, y, rw, rh, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.arcTo(x + rw, y, x + rw, y + rh, r); ctx.arcTo(x + rw, y + rh, x, y + rh, r);
+    ctx.arcTo(x, y + rh, x, y, r); ctx.arcTo(x, y, x + rw, y, r); ctx.closePath();
+  }
+
+  function drawAnchor(a, t) {
+    const pulse = 0.8 + 0.2 * Math.sin(t * 0.002 + a.tw);
+    const g = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, 22 * pulse);
+    g.addColorStop(0, 'rgba(255,240,210,0.9)');
+    g.addColorStop(0.3, 'rgba(255,214,160,0.35)');
+    g.addColorStop(1, 'rgba(255,214,160,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(a.x, a.y, 22 * pulse, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#fff6e4';
+    const L = 11 * pulse, s = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y - L); ctx.lineTo(a.x + s, a.y - s); ctx.lineTo(a.x + L, a.y); ctx.lineTo(a.x + s, a.y + s);
+    ctx.lineTo(a.x, a.y + L); ctx.lineTo(a.x - s, a.y + s); ctx.lineTo(a.x - L, a.y); ctx.lineTo(a.x - s, a.y - s);
+    ctx.closePath(); ctx.fill();
   }
 
   function frame(t) {
     ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
     ctx.fillStyle = '#05060d';
     ctx.fillRect(0, 0, w, h);
     const cx = w * 0.58, cy = h * 0.45;
@@ -98,10 +242,18 @@
       ctx.globalAlpha = 0.35 + 0.35 * Math.sin(t * 0.002 + g.tw);
       ctx.fillStyle = g.warm ? '#f3d9a4' : '#9fb8ff';
       ctx.beginPath();
-      ctx.arc(x, y, g.s, 0, 6.283);
+      ctx.arc(x, y, g.s, 0, TAU);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
+    for (const a of anchors) drawAnchor(a, t);
+
+    ctx.globalCompositeOperation = 'source-over';
+    for (const m of monkeys) {
+      if (!still) step(m, t);
+      const p = placement(m, still ? 0 : t);
+      drawMonkey(p.x, p.y, m.face, p.rot, p.tuck, still ? 0.6 : p.wave);
+    }
     if (!still) requestAnimationFrame(frame);
   }
 
