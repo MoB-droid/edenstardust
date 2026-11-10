@@ -82,6 +82,23 @@
     position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
     display: flex; align-items: center; gap: 10px; font-size: 0.8rem; color: var(--muted);
   }
+  .entries {
+    position: fixed; top: calc(58px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
+    width: min(560px, calc(100vw - 32px)); max-height: min(70vh, 620px); display: grid; grid-template-rows: auto auto 1fr; gap: 10px;
+    padding: 18px 18px 14px; background: rgba(12, 13, 28, 0.88); border: 1px solid rgba(223, 230, 255, 0.14); border-radius: 14px;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  }
+  .entries-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .entries-head h2 { margin: 0; font: italic 400 1.6rem/1 var(--display); }
+  .entries-head button { font: 500 0.8rem var(--body); color: var(--muted); background: none; border: 0; cursor: pointer; }
+  .entries-sum { text-transform: none; letter-spacing: 0; font-size: 0.82rem; }
+  .entries-scroll { overflow: auto; min-height: 0; border-top: 1px solid rgba(223, 230, 255, 0.1); }
+  .entries table { width: 100%; border-collapse: collapse; font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+  .entries th { position: sticky; top: 0; background: rgba(12, 13, 28, 0.98); text-align: left; font-weight: 500; color: var(--muted); padding: 8px 6px; }
+  .entries td { padding: 7px 6px; border-top: 1px solid rgba(223, 230, 255, 0.06); vertical-align: top; word-break: break-word; }
+  .entries td:first-child, .entries th:first-child { color: var(--muted); width: 2.2em; }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.72rem; background: rgba(159, 184, 255, 0.14); color: var(--dust-cool); }
+  .chip.google { background: rgba(243, 217, 164, 0.16); color: var(--dust-warm); }
   .bar button { font: 500 0.8rem var(--body); color: var(--text); background: rgba(223, 230, 255, 0.08); border: 1px solid rgba(223, 230, 255, 0.18); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
 </style>
 
@@ -93,8 +110,23 @@
 
 <div class="bar" id="bar" hidden>
   <span id="who"></span>
+  <button type="button" id="entries-btn" hidden>Entries</button>
   <button type="button" id="signout">Sign out</button>
 </div>
+
+<section class="entries" id="entries" hidden aria-label="Login entries">
+  <div class="entries-head">
+    <h2>Entries</h2>
+    <button type="button" id="entries-close">Close</button>
+  </div>
+  <p class="entries-sum" id="entries-sum">Loading…</p>
+  <div class="entries-scroll">
+    <table>
+      <thead><tr><th>#</th><th>Email</th><th>Method</th><th>Time</th></tr></thead>
+      <tbody id="entries-rows"></tbody>
+    </table>
+  </div>
+</section>
 
 <div class="gate" id="gate">
   <form class="card" id="auth-form" novalidate>
@@ -352,6 +384,7 @@
 (() => {
   const SUPABASE_URL = 'https://ldvzztgzamahlftnbawr.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_1BiE8kmut-C1AbXFck3QOA_11tONrHl';
+  const MASTER = 'moran@studioba.co.il';
   const onSite = /(^|\.)edenstardust\.com$/.test(location.hostname);
   const $ = id => document.getElementById(id);
   const gate = $('gate'), bar = $('bar'), caption = $('caption'), who = $('who');
@@ -363,12 +396,77 @@
 
   function say(text, kind) { msg.textContent = text; msg.className = 'msg' + (kind ? ' ' + kind : ''); }
 
+  const entries = $('entries'), entriesBtn = $('entries-btn'), entriesSum = $('entries-sum'), entriesRows = $('entries-rows');
+  let entriesLoadedFor = null;
+
   function show(user) {
     const inside = !!user;
     gate.hidden = inside; bar.hidden = !inside; caption.hidden = !inside;
     who.textContent = user ? user.email : '';
     if (!inside) password.value = '';
+    const master = inside && (previewing || (user.email || '').toLowerCase() === MASTER);
+    entriesBtn.hidden = !master;
+    if (!master) { entries.hidden = true; entriesLoadedFor = null; return; }
+    if (entriesLoadedFor !== user.email) { entriesLoadedFor = user.email; entries.hidden = false; loadEntries(); }
   }
+
+  function fmtTime(iso) {
+    try { return new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+    catch (e) { return iso; }
+  }
+
+  function renderEntries(rows, note) {
+    entriesRows.replaceChildren(...rows.map((r, i) => {
+      const tr = document.createElement('tr');
+      const method = r.provider === 'google' ? 'Google' : 'Email';
+      tr.innerHTML = '<td></td><td></td><td><span class="chip"></span></td><td></td>';
+      tr.children[0].textContent = i + 1;
+      tr.children[1].textContent = r.email;
+      const chip = tr.children[2].firstChild; chip.textContent = method; if (method === 'Google') chip.classList.add('google');
+      tr.children[3].textContent = fmtTime(r.created_at);
+      return tr;
+    }));
+    const people = new Set(rows.map(r => r.email)).size;
+    entriesSum.textContent = note || (rows.length
+      ? rows.length + (rows.length === 1 ? ' entry' : ' entries') + ' from ' + people + (people === 1 ? ' person' : ' people') + ', newest first.'
+      : 'No entries yet. Each login will appear here.');
+  }
+
+  async function loadEntries() {
+    if (previewing) {
+      const now = Date.now();
+      return renderEntries([
+        { email: 'example.one@gmail.com', provider: 'google', created_at: new Date(now - 4 * 60e3).toISOString() },
+        { email: 'example.two@mail.com', provider: 'email', created_at: new Date(now - 95 * 60e3).toISOString() },
+        { email: 'example.one@gmail.com', provider: 'google', created_at: new Date(now - 26 * 3600e3).toISOString() }
+      ], 'Sample rows. Real entries load on edenstardust.com.');
+    }
+    entriesSum.textContent = 'Loading…';
+    try {
+      const { data, error } = await sb.from('logins').select('email, provider, created_at').order('created_at', { ascending: false }).limit(500);
+      if (error) throw error;
+      renderEntries(data || []);
+    } catch (err) {
+      entriesRows.replaceChildren();
+      entriesSum.textContent = /relation|does not exist|schema cache/i.test(err.message || '')
+        ? 'The entries table is not set up yet in Supabase.'
+        : 'Could not load entries: ' + (err.message || 'unknown error');
+    }
+  }
+
+  async function logLogin(session) {
+    const u = session && session.user;
+    if (!u || !sb) return;
+    const key = 'eden-logged:' + u.id + ':' + (u.last_sign_in_at || '');
+    try { if (localStorage.getItem(key)) return; } catch (e) {}
+    try {
+      const { error } = await sb.from('logins').insert({ email: u.email, provider: (u.app_metadata && u.app_metadata.provider) || 'email' });
+      if (!error) { try { localStorage.setItem(key, '1'); } catch (e) {} if (entriesLoadedFor) loadEntries(); }
+    } catch (e) {}
+  }
+
+  entriesBtn.addEventListener('click', () => { entries.hidden = !entries.hidden; if (!entries.hidden) loadEntries(); });
+  $('entries-close').addEventListener('click', () => { entries.hidden = true; });
 
   function setMode(m) {
     mode = m;
@@ -434,7 +532,11 @@
   show(null);
   if (sb) {
     sb.auth.getSession().then(({ data }) => { if (data.session) show(data.session.user); }).catch(() => {});
-    sb.auth.onAuthStateChange((_event, session) => { if (!previewing) show(session ? session.user : null); });
+    sb.auth.onAuthStateChange((event, session) => {
+      if (previewing) return;
+      show(session ? session.user : null);
+      if (event === 'SIGNED_IN') setTimeout(() => logLogin(session), 0);
+    });
   }
 })();
 </script>
