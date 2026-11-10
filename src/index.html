@@ -116,7 +116,7 @@
   <p class="entries-sum" id="entries-sum">Loading…</p>
   <div class="entries-scroll">
     <table>
-      <thead><tr><th>#</th><th>Email</th><th>Method</th><th>Time</th></tr></thead>
+      <thead><tr><th>#</th><th>Email</th><th>First entry</th><th>Last entry</th></tr></thead>
       <tbody id="entries-rows"></tbody>
     </table>
   </div>
@@ -409,20 +409,27 @@
     catch (e) { return iso; }
   }
 
+  // One row per person: first and last entry, ordered by first entry (earliest = #1).
   function renderEntries(rows, note) {
-    entriesRows.replaceChildren(...rows.map((r, i) => {
+    const byEmail = new Map();
+    for (const r of rows) {
+      const t = new Date(r.created_at).getTime();
+      const p = byEmail.get(r.email);
+      if (!p) byEmail.set(r.email, { email: r.email, first: t, last: t });
+      else { p.first = Math.min(p.first, t); p.last = Math.max(p.last, t); }
+    }
+    const people = [...byEmail.values()].sort((a, b) => a.first - b.first);
+    entriesRows.replaceChildren(...people.map((p, i) => {
       const tr = document.createElement('tr');
-      const method = r.provider === 'google' ? 'Google' : 'Email';
-      tr.innerHTML = '<td></td><td></td><td><span class="chip"></span></td><td></td>';
+      tr.innerHTML = '<td></td><td></td><td></td><td></td>';
       tr.children[0].textContent = i + 1;
-      tr.children[1].textContent = r.email;
-      const chip = tr.children[2].firstChild; chip.textContent = method; if (method === 'Google') chip.classList.add('google');
-      tr.children[3].textContent = fmtTime(r.created_at);
+      tr.children[1].textContent = p.email;
+      tr.children[2].textContent = fmtTime(p.first);
+      tr.children[3].textContent = fmtTime(p.last);
       return tr;
     }));
-    const people = new Set(rows.map(r => r.email)).size;
-    entriesSum.textContent = note || (rows.length
-      ? rows.length + (rows.length === 1 ? ' entry' : ' entries') + ' from ' + people + (people === 1 ? ' person' : ' people') + ', newest first.'
+    entriesSum.textContent = note || (people.length
+      ? people.length + (people.length === 1 ? ' person' : ' people') + ', ' + rows.length + (rows.length === 1 ? ' entry' : ' entries') + ' in total. Ordered by first entry.'
       : 'No entries yet. Each login will appear here.');
   }
 
@@ -437,7 +444,7 @@
     }
     entriesSum.textContent = 'Loading…';
     try {
-      const { data, error } = await sb.from('logins').select('email, provider, created_at').order('created_at', { ascending: false }).limit(500);
+      const { data, error } = await sb.from('logins').select('email, provider, created_at').order('created_at', { ascending: false }).limit(1000);
       if (error) throw error;
       renderEntries(data || []);
     } catch (err) {
