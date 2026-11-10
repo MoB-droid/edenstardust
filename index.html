@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Stardust</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,400&family=Inter:wght@400;500&display=swap">
+<style>
+  /* Layout: one full-bleed canvas of drifting dust, a quiet caption bottom-left. Single deliberate dark look. */
+  :root {
+    --void: #05060d;
+    --dust-warm: #f3d9a4;
+    --dust-cool: #9fb8ff;
+    --text: #e9e6f2;
+    --muted: #8a87a3;
+    --display: "Cormorant Garamond", "Iowan Old Style", Georgia, serif;
+    --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body { background: var(--void); color: var(--text); font-family: var(--body); overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .caption {
+    position: fixed; left: 0; bottom: 0;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 0 calc(28px + env(safe-area-inset-bottom, 0px));
+    display: grid; gap: 6px; pointer-events: none;
+  }
+  h1 { margin: 0; font: italic 400 clamp(2.6rem, 8vw, 5.5rem)/0.95 var(--display); letter-spacing: 0.01em; text-wrap: balance; }
+  p { margin: 0; font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+</style>
+
+<canvas id="sky" aria-label="Animated field of stardust swirling around a faint glowing core"></canvas>
+<div class="caption">
+  <h1>Stardust</h1>
+  <p>Interstellar grains · 0.1–1 µm</p>
+</div>
+
+<script>
+(() => {
+  const c = document.getElementById('sky');
+  const ctx = c.getContext('2d');
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let w, h, dpr, grains = [], stars = [];
+
+  function rand(a, b) { return a + Math.random() * (b - a); }
+
+  function build() {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    w = innerWidth; h = innerHeight;
+    c.width = w * dpr; c.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const n = Math.round(Math.min(w * h / 450, 4000));
+    const R = Math.max(w, h) * 0.55;
+    grains = Array.from({ length: n }, () => {
+      const arm = Math.floor(Math.random() * 3);
+      const r = Math.pow(Math.random(), 0.7) * R;
+      const a = arm * (Math.PI * 2 / 3) + r / R * 4.2 + rand(-0.35, 0.35);
+      return {
+        r, a,
+        s: rand(0.3, 1.6) * (1 - r / R * 0.5),
+        speed: rand(0.00008, 0.0003) * (1.4 - r / R),
+        warm: Math.random() < 0.55,
+        tw: rand(0, Math.PI * 2)
+      };
+    });
+    stars = Array.from({ length: Math.round(w * h / 5000) }, () => ({
+      x: rand(0, w), y: rand(0, h), s: rand(0.3, 1.1), tw: rand(0, 6.28)
+    }));
+  }
+
+  function frame(t) {
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#05060d';
+    ctx.fillRect(0, 0, w, h);
+    const cx = w * 0.58, cy = h * 0.45;
+
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 0.45);
+    glow.addColorStop(0, 'rgba(255,214,160,0.35)');
+    glow.addColorStop(0.25, 'rgba(160,120,220,0.12)');
+    glow.addColorStop(1, 'rgba(5,6,13,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.globalCompositeOperation = 'lighter';
+    for (const s of stars) {
+      ctx.globalAlpha = 0.4 + 0.4 * Math.sin(t * 0.001 + s.tw);
+      ctx.fillStyle = '#dfe6ff';
+      ctx.fillRect(s.x, s.y, s.s, s.s);
+    }
+    for (const g of grains) {
+      if (!still) g.a += g.speed * 16;
+      const x = cx + Math.cos(g.a) * g.r;
+      const y = cy + Math.sin(g.a) * g.r * 0.55;
+      ctx.globalAlpha = 0.35 + 0.35 * Math.sin(t * 0.002 + g.tw);
+      ctx.fillStyle = g.warm ? '#f3d9a4' : '#9fb8ff';
+      ctx.beginPath();
+      ctx.arc(x, y, g.s, 0, 6.283);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    if (!still) requestAnimationFrame(frame);
+  }
+
+  addEventListener('resize', () => { build(); if (still) frame(0); });
+  build();
+  still ? frame(0) : requestAnimationFrame(frame);
+})();
+</script>
+
+</html>
