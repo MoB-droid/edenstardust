@@ -29,7 +29,7 @@ A seating planner. A company user signs in, sees their seat plans as picture til
 |---|-------|-------|-------|
 | 1 | Login + dashboard source | claude.ai artifact "EdenStardust" https://claude.ai/artifact/YZ99BHuSht2ngm1KEFZfg5 | copied to `src/index.html` |
 | 2 | Seat Plan editor source (master) | claude.ai artifact "Seat Plan" https://claude.ai/artifact/8YvWWtMB5YLdyWt5fFQMAp | copied to `src/seatplan.html`. A new layout gives numbered desks only (team 0, no markers, empty PROGRAM); teams come only from Upload program or + |
-| 3 | Seat Plan rules and spec | claude.ai artifact "Sitting arrangement" https://claude.ai/artifact/RaEdTRd7AEqCpkKp3uGVVD | read before changing the editor |
+| 3 | Seat Plan rules and spec | claude.ai artifact "Sitting arrangement" https://claude.ai/artifact/RaEdTRd7AEqCpkKp3uGVVD | rules, spec, work log, desk-finding kit (`kit/detect.py`, `kit/build.py`). Read before changing the editor; update its rules and work log when behaviour changes |
 | 4 | Website files | this repo, branch `main`, GitHub Pages (root folder), custom domain edenstardust.com, HTTPS enforced | pushing `main` deploys |
 | 5 | Users, plan data, files | Supabase project `edenstardust`, ref `ldvzztgzamahlftnbawr`, region Frankfurt | free plan |
 | 6 | Domain + DNS | GoDaddy | A @ → 185.199.108–111.153; CNAME www → mob-droid.github.io; Resend records on `send.` and `resend._domainkey` |
@@ -41,8 +41,19 @@ Only these artifacts belong on the user's Claude for this project. **Never creat
 
 ## 4. The pipeline (how a change reaches the site)
 
+**One source per thing (never keep a second copy of the editor code):**
+
+| # | What changes | Edit only here |
+|---|--------------|----------------|
+| 1 | What the editor should do (rules) | Sitting arrangement artifact (rules + work log) |
+| 2 | Editor code | master Seat Plan artifact |
+| 3 | Login / dashboard code | EdenStardust artifact |
+| 4 | Database tables, rules, storage | Supabase, through the Management API (then note it in section 5) |
+| 5 | How everything connects | this file |
+
+
 1. Edit the artifact (1 or 2 above). For an artifact not published from this session: `Artifact` action `read` with its URL, edit the saved file, publish back to the **same URL**. Send the link.
-2. Wait for the user to say **"update site"**. Never push to `main` before that (pushing `main` deploys). Work-in-progress may go on a `claude/...` branch.
+2. Wait for the user to say **"update site"**. Never push site changes to `main` before that (pushing `main` deploys). Work-in-progress goes on the `claude/seatplan-dashboard` branch. A change to this `CLAUDE.md` alone may go straight to `main` (the site does not change).
 3. On "update site": copy the artifact's current HTML into `src/index.html` (artifact 1) or `src/seatplan.html` (artifact 2): page content only, from `<title>` to the last `</script>`, without the `<!doctype>…<body>` wrapper an Artifact read returns. Run `./build.sh`, commit, push `main`.
 4. Wait for GitHub Pages (about 1 minute) and check the live site with `curl` or Playwright before reporting.
 
