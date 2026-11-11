@@ -1,4 +1,11 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
 <title>Seat Plan · EdenStardust</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.min.js"></script>
 <script src="/js/eden-shim.js"></script>
@@ -326,7 +333,7 @@ function renderLayout(L) {
   });
   document.getElementById('desks').innerHTML = dk.join('');
   // team markers: outside the building on the side given (or nearest), spread so markers on one side never overlap
-  var mk = order.map(function (t) {
+  var mk = order.filter(function (t) { return t !== '0'; }).map(function (t) {
     var ds = teams[t], b = [Infinity, Infinity, -Infinity, -Infinity];
     ds.forEach(function (e) { b[0] = Math.min(b[0], e.r[0]); b[1] = Math.min(b[1], e.r[1]); b[2] = Math.max(b[2], e.r[2]); b[3] = Math.max(b[3], e.r[3]); });
     var side = (L.sides && L.sides[t]) || sideOf(E, b), cx, y;
@@ -356,7 +363,7 @@ function renderLayout(L) {
   });
   document.getElementById('teams').innerHTML = tm.join('');
   scaleMarkers();
-  var rows = order.map(function (t) {
+  var rows = order.filter(function (t) { return t !== '0'; }).map(function (t) {
     var ds = teams[t];
     return '<tbody class="grp" data-t="' + t + '"><tr class="gh"><td><button type="button" class="fold" aria-expanded="false"><span class="car" aria-hidden="true"></span>T' + t + '</button></td><td class="tn ed" data-k="teams" data-id="' + t + '" title="Double-click to edit"></td><td class="num cnt ed" data-k="need" data-id="' + t + '" data-def="' + ds.length + '" title="Double-click to edit">' + ds.length + '</td><td class="del"><span class="acts"><button type="button" class="addbtn tip" data-tip="add team member" data-t="' + t + '" aria-label="Add a person to team T' + t + '">+</button><button type="button" class="delbtn" data-t="' + t + '" aria-label="Delete team T' + t + '">Delete</button></span></td></tr>' +
       ds.map(function (e, i) { return '<tr data-s="' + e.s + '" class="m" hidden><td class="num">' + (i + 1) + '</td><td class="nm ed" data-k="names" data-id="' + e.s + '" title="Double-click to edit"></td><td class="num">' + e.s + '</td><td class="del"><button type="button" class="delbtn" data-s="' + e.s + '" aria-label="Delete this person">Delete</button></td></tr>'; }).join('') + '</tbody>';
@@ -367,7 +374,7 @@ function renderLayout(L) {
   document.getElementById('tottot').textContent = D.length;
   document.getElementById('totused').textContent = D.length;
   document.getElementById('totfree').textContent = 0;
-  document.getElementById('pd').textContent = (L.desc || 'Floor plan') + ' with all ' + D.length + ' workstation desks shaded light blue, numbered 1 to ' + D.length + ', and grouped into ' + order.length + ' teams.';
+  document.getElementById('pd').textContent = (L.desc || 'Floor plan') + ' with all ' + D.length + ' workstation desks shaded light blue, numbered 1 to ' + D.length + ', and grouped into ' + order.filter(function (t) { return t !== '0'; }).length + ' teams.';
   if (L.heading) { var lt = document.getElementById('ltitle'); lt.dataset.def = L.heading; lt.textContent = L.heading; }
   // an uploaded plan picture: swap in an inline copy so "Export → Layout as picture" includes it
   if (L.img && !/^data:/.test(L.img) && window.fetch) fetch(window.__blobUrl ? window.__blobUrl(L.img) : L.img).then(function (r) { return r.ok ? r.blob() : null; }).then(function (b) {
@@ -538,7 +545,7 @@ function buildLayout(D, name) {
   G.forEach(function (g, ti) {
     var t = ti + 1;
     g.ds.sort(function (a, b) { return Math.round((a[1] + a[3]) / 60) - Math.round((b[1] + b[3]) / 60) || (a[0] - b[0]); });
-    g.ds.forEach(function (d) { out.push([d[0], d[1], d[2], d[3], t]); });
+    g.ds.forEach(function (d) { out.push([d[0], d[1], d[2], d[3], 0]); });   // no team until a program is uploaded or typed in
     var b = [Infinity, Infinity, -Infinity, -Infinity];
     g.ds.forEach(function (d) { b[0] = Math.min(b[0], d[0]); b[1] = Math.min(b[1], d[1]); b[2] = Math.max(b[2], d[2]); b[3] = Math.max(b[3], d[3]); });
     sides[t] = sideOf(E, b, true);   // automatic layouts: every marker outside the building, on its nearest side
@@ -584,7 +591,7 @@ window.__autoLayout = function (file, db, recId) {
       var D = findDesks(S);
       if (D.length < 2) throw { code: 'nodesks' };
       L = buildLayout(D, file.name);
-      lnote('Found ' + D.length + ' desks in ' + L.teams + ' teams. Drawing the plan…', true);
+      lnote('Found ' + D.length + ' desks. Drawing the plan…', true);
       return planPicture(page, L.extent);
     })
     .then(function (png) { return window.claude.use('assets').then(function (a) { if (!a) throw { code: 'not_granted' }; return a.upload(png, { type: 'image/png' }); }); })
@@ -596,7 +603,7 @@ window.__autoLayout = function (file, db, recId) {
     .then(function () {
       if (recId) db.collection('layouts').doc(recId).update({ status: 'done (automatic)', seats: L.desks.length, teams: L.teams }).catch(function () {});
       try { localStorage.removeItem(EMBED.lskey); localStorage.removeItem(EMBED.lskey + ':undo'); } catch (e) {}
-      lnote('Done: ' + L.desks.length + ' seats in ' + L.teams + ' teams. Loading the new plan… (reload the page if it does not appear)', true);
+      lnote('Done: ' + L.desks.length + ' seats. Loading the new plan… (reload the page if it does not appear)', true);
       setTimeout(function () { location.reload(); }, 900);
     })
     .catch(function (e) {
@@ -1881,4 +1888,5 @@ function MAIN() {
 START();
 </script>
 
-</body></html>
+</body>
+</html>

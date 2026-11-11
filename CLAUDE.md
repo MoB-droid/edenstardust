@@ -28,7 +28,7 @@ A seating planner. A company user signs in, sees their seat plans as picture til
 | # | Piece | Where | Notes |
 |---|-------|-------|-------|
 | 1 | Login + dashboard source | claude.ai artifact "EdenStardust" https://claude.ai/artifact/YZ99BHuSht2ngm1KEFZfg5 | copied to `src/index.html` |
-| 2 | Seat Plan editor source (master) | claude.ai artifact "Seat Plan" https://claude.ai/artifact/8YvWWtMB5YLdyWt5fFQMAp | copied to `src/seatplan.html` |
+| 2 | Seat Plan editor source (master) | claude.ai artifact "Seat Plan" https://claude.ai/artifact/8YvWWtMB5YLdyWt5fFQMAp | copied to `src/seatplan.html`. A new layout gives numbered desks only (team 0, no markers, empty PROGRAM); teams come only from Upload program or + |
 | 3 | Seat Plan rules and spec | claude.ai artifact "Sitting arrangement" https://claude.ai/artifact/RaEdTRd7AEqCpkKp3uGVVD | read before changing the editor |
 | 4 | Website files | this repo, branch `main`, GitHub Pages (root folder), custom domain edenstardust.com, HTTPS enforced | pushing `main` deploys |
 | 5 | Users, plan data, files | Supabase project `edenstardust`, ref `ldvzztgzamahlftnbawr`, region Frankfurt | free plan |
@@ -43,7 +43,7 @@ Only these artifacts belong on the user's Claude for this project. **Never creat
 
 1. Edit the artifact (1 or 2 above). For an artifact not published from this session: `Artifact` action `read` with its URL, edit the saved file, publish back to the **same URL**. Send the link.
 2. Wait for the user to say **"update site"**. Never push to `main` before that (pushing `main` deploys). Work-in-progress may go on a `claude/...` branch.
-3. On "update site": copy the artifact's current HTML into `src/index.html` (artifact 1, page content only, no doctype wrapper) or `src/seatplan.html` (artifact 2, the full HTML the read returns), run `./build.sh`, commit, push `main`.
+3. On "update site": copy the artifact's current HTML into `src/index.html` (artifact 1) or `src/seatplan.html` (artifact 2): page content only, from `<title>` to the last `</script>`, without the `<!doctype>…<body>` wrapper an Artifact read returns. Run `./build.sh`, commit, push `main`.
 4. Wait for GitHub Pages (about 1 minute) and check the live site with `curl` or Playwright before reporting.
 
 `build.py` turns the sources into pages:

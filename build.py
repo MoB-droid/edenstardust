@@ -36,6 +36,9 @@ def build_index():
 
 def build_plan():
     s = (ROOT / 'src/seatplan.html').read_text(encoding='utf-8')
+    # the artifact source is page content only (claude.ai adds the HTML wrapper): add it here too
+    if not s.lstrip().lower().startswith('<!doctype'):
+        s = HEAD + '</head>\n<body>\n' + s + '\n</body>\n</html>\n'
     # load Supabase and the shim before the app's own script
     s = swap(s, '<title>Seat Plan</title>',
              '<title>Seat Plan · EdenStardust</title>\n'
