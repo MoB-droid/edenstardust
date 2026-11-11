@@ -1,0 +1,1884 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Seat Plan · EdenStardust</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.min.js"></script>
+<script src="/js/eden-shim.js"></script>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: zoomable plan with numbered desks and team markers outside the shell, then one foldable seats table. */
+:root {
+  --bg: #f5f7f9; --paper: #ffffff; --fg: #18202a; --muted: #5d6874; --line: #d5dce3;
+  --desk: #9fd0f5; --desk-edge: #3b88c4; --ink: #0b2c47; --accent: #1d5f9b; --pill: #18202a; --pill-ink: #ffffff;
+  --clash: #d92d20; --clash-ink: #5c0d06; --team-hi: #f28c1c; --team-hi-ink: #2a1600; --plan: #ffffff; --img-filter: none; --img-op: .55;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161b; --paper: #171d23; --fg: #e3e8ed; --muted: #97a2ae; --line: #2b343d;
+    --desk: #6fb4e8; --desk-edge: #9fd0f5; --ink: #06243b; --accent: #7ab6ea; --pill: #e3e8ed; --pill-ink: #11161b;
+    --plan: #0d1115; --img-filter: invert(1) hue-rotate(180deg); --img-op: .5; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161b; --paper: #171d23; --fg: #e3e8ed; --muted: #97a2ae; --line: #2b343d;
+  --desk: #6fb4e8; --desk-edge: #9fd0f5; --ink: #06243b; --accent: #7ab6ea; --pill: #e3e8ed; --pill-ink: #11161b;
+  --plan: #0d1115; --img-filter: invert(1) hue-rotate(180deg); --img-op: .5; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--display); font-size: 15px; line-height: 1.45;
+  padding-block: 24px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+main { max-width: 1280px; margin: 0 auto; display: grid; gap: 20px; }
+main > * { min-width: 0; }
+header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 12px 32px; border-bottom: 2px solid var(--fg); padding-bottom: 12px; }
+h1 { font-weight: 600; font-size: 28px; margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); margin: 4px 0 0; }
+.sheet { display: grid; grid-template-columns: repeat(4, auto); gap: 2px 22px; margin: 0; font-family: var(--mono); }
+.sheet dt { color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-size: 10px; }
+.sheet dd { margin: 0; font-size: 16px; font-variant-numeric: tabular-nums; }
+.bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+.bar p { margin: 0; color: var(--muted); font-size: 13px; }
+.zoom { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.zoom button { font: 500 13px var(--mono); background: var(--paper); color: var(--fg); border: 0; padding: 6px 12px; cursor: pointer; }
+.zoom button + button { border-left: 1px solid var(--line); }
+.zoom button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.planwrap.zoomed { cursor: grab; }
+.dk.hasp { cursor: grab; }
+#desks .dk rect { pointer-events: all; }
+.planwrap.pmoving, .planwrap.pmoving * { cursor: grabbing !important; user-select: none; }
+.dk.src rect { opacity: .45; }
+.dk.drop rect { fill: var(--btn-off); fill-opacity: 1; stroke: var(--btn); stroke-width: 4; }
+.pdrag { position: fixed; z-index: 60; pointer-events: none; background: #144878; color: #ffffff; font: 600 13px var(--display); padding: 5px 10px; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.2); white-space: nowrap; }
+.planwrap.panning, .planwrap.panning * { cursor: grabbing !important; user-select: none; }
+.planwrap { overflow: auto; border: 1px solid var(--line); background: var(--plan); border-radius: 4px; max-height: 82vh; display: flex; }
+#plan { display: block; flex: none; width: 100%; height: auto; margin: auto; }
+#plan .bgimg { filter: var(--img-filter); opacity: var(--img-op); }
+.dk rect { fill: var(--desk); fill-opacity: .85; stroke: var(--desk-edge); stroke-width: 1.4; }
+.dk text { fill: var(--ink); font: 600 15px var(--mono); text-anchor: middle; dominant-baseline: central; }
+.dk { cursor: pointer; }
+.dk text.pn { font: 600 15px var(--display); }
+.dk.hi rect { fill: var(--accent); fill-opacity: 1; stroke: var(--fg); stroke-width: 3; }
+.dk.hi text { fill: #ffffff; }
+.team rect { fill: var(--pill); }
+.team text { fill: var(--pill-ink); font: 600 42px var(--display); text-anchor: middle; dominant-baseline: central; letter-spacing: .02em; }
+.team { cursor: pointer; }
+.team:focus-visible { outline: none; }
+.team:focus-visible rect { stroke: var(--accent); stroke-width: 5; }
+.team[aria-pressed="true"] rect { fill: var(--team-hi); stroke: var(--fg); stroke-width: 3; }
+.team[aria-pressed="true"] text { fill: var(--team-hi-ink); }
+.lead.on { stroke: var(--team-hi); opacity: 1; stroke-width: 4; }
+.dk.th rect, .dk.ts rect { fill: var(--team-hi); fill-opacity: 1; stroke: var(--team-hi-ink); stroke-width: 3; }
+.dk.th text, .dk.ts text { fill: var(--team-hi-ink); }
+.team text.tname { fill: var(--fg); font: 600 42px var(--display); letter-spacing: .02em; paint-order: stroke; stroke: var(--plan); stroke-width: 8px; stroke-linejoin: round; }
+.team[aria-pressed="true"] text.tname { fill: var(--fg); }
+.tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.team { touch-action: none; cursor: grab; }
+.team.drag { cursor: grabbing; }
+.dk.mv rect { fill: var(--desk); fill-opacity: 1; stroke: var(--clash); stroke-width: 2.5; stroke-dasharray: 6 4; }
+/* a shaded team or person shows orange also on free desks it took (dashed) */
+.dk.mv.th rect, .dk.mv.ts rect { fill: var(--team-hi); stroke: var(--team-hi-ink); stroke-width: 3; stroke-dasharray: none; }
+.dk.empty rect { fill: none; stroke: var(--clash); stroke-width: 2.5; }
+.dk.empty text { display: none; }
+.dk.ov rect, .dk.ov.th rect, .dk.ov.ts rect { fill: var(--clash); fill-opacity: .92; stroke: var(--clash-ink); stroke-width: 2.5; }
+.dk.ov text { fill: #ffffff; }
+.team text.short { fill: var(--clash); font: 600 34px var(--display); letter-spacing: 0; paint-order: stroke; stroke: var(--plan); stroke-width: 8px; stroke-linejoin: round; }
+.dk.unused { display: none; }
+.seats tr.m.unused { display: none; }
+/* totals: one line, font sized by fitTotals() so it spans the column width */
+.tot { font-size: 18px; line-height: 1.2; white-space: nowrap; flex: 1 0 100%; min-width: 0; overflow: hidden; }
+main > section.stack > * { min-width: 0; }
+main > section.stack:last-child > .totrow:first-child { margin-top: 11px; }
+/* the right column sits in a frame like the plan */
+main > section.stack:last-child { border: 1px solid var(--line); border-radius: 4px; background: var(--paper); padding: 16px 18px; align-content: start; }
+.seats thead th:first-child { padding-left: 24px; }
+.tot .sep { color: var(--muted); font-weight: 400; margin: 0 0.45em; }
+.seats td.del { text-align: right; width: 1%; position: relative; }
+.acts { display: inline-flex; gap: 6px; align-items: center; }
+.addbtn { font: 600 14px var(--mono); color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 6px; padding: 1px 9px; cursor: pointer; }
+.addbtn:hover { color: var(--accent); border-color: var(--accent); }
+.seats tbody.on .addbtn { color: var(--team-hi-ink); border-color: var(--team-hi-ink); }
+.delbtn { font: 500 13px var(--mono); color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+.delbtn:hover { color: var(--clash); border-color: var(--clash); }
+.confirm { position: absolute; right: 100%; top: 50%; transform: translateY(-50%); margin-right: 8px; white-space: nowrap; z-index: 5;
+  font: 600 14px var(--mono); color: #ffffff; background: var(--clash); border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.22); }
+.seats tbody.on .delbtn { color: var(--team-hi-ink); border-color: var(--team-hi-ink); }
+tbody.grp.gone { display: none; }
+.seats tr.m.pgone { display: none; }
+.undo { min-width: 36px; font: 500 13px var(--mono); background: var(--fg); color: var(--bg); border: 0; border-radius: 6px; padding: 7px 14px; cursor: pointer; }
+.undo:disabled { background: var(--line); color: var(--muted); cursor: default; }
+.totrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; max-width: 640px; }
+.tabletitle { margin-top: 14px; }
+.tabletitle h2 { font-weight: 600; line-height: 1.2; letter-spacing: 0; }
+.tip { position: relative; }
+.tip::after { content: attr(data-tip); position: absolute; right: 0; bottom: calc(100% + 6px); white-space: nowrap; pointer-events: none;
+  font: 500 12px var(--display); color: var(--bg); background: var(--fg); padding: 3px 8px; border-radius: 4px; opacity: 0; transition: opacity .12s; }
+.tip:hover::after, .tip:focus-visible::after { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .tip::after { transition: none; } }
+.delwrap { position: relative; display: inline-block; }
+.ltitle { cursor: text; }
+.emptyplan rect { fill: none; stroke: var(--line); stroke-width: 6; stroke-dasharray: 24 18; }
+.emptyplan text { fill: var(--muted); font: 600 96px var(--display); text-anchor: middle; dominant-baseline: central; }
+.emptyplan text.sub { font: 500 56px var(--display); }
+.expmenu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 6; display: grid; min-width: 210px; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.16); overflow: hidden; }
+.expmenu[hidden] { display: none; }
+.expmenu button { font: 500 14px var(--display); text-align: left; background: none; border: 0; padding: 9px 12px; color: var(--fg); cursor: pointer; }
+.expmenu button:hover, .expmenu button:focus-visible { background: color-mix(in srgb, var(--accent) 12%, transparent); outline: none; }
+.ltitle input { font: 600 18px var(--display); padding: 2px 8px; border: 1px solid var(--accent); border-radius: 4px; background: var(--paper); color: var(--fg); min-width: 280px; }
+#laymsg.ok { color: var(--fg); }
+.tabletitle .undo { padding: 3px 10px; border: 1px solid var(--fg); line-height: normal; }
+/* row buttons line up under the title buttons: same widths, same gap, same right edge */
+.tabletitle .tools { gap: 6px; padding-right: 0; }
+.seats td.del, .seats th.del { padding-right: 8px !important; text-align: right; width: 1%; white-space: nowrap; }
+.seats th.del .acts { justify-content: flex-end; }
+.seats th.del #addteam { padding: 0; border: 1px solid var(--fg); height: 25px; }
+.seats .addbtn, .seats .delbtn, #delprog { height: 25px; padding-top: 0; padding-bottom: 0; }
+.tablewrap { overflow: visible !important; }
+/* the PROGRAM table sits in its own frame */
+.tablewrap { border: 1px solid var(--line); border-radius: 4px; }
+.seats tbody:last-child tr:last-child td { border-bottom: 0; }
+.seats .tn, .seats .nm { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 560px) { .seats th, .seats td { padding-left: 5px; padding-right: 5px; } .seats thead th:first-child { padding-left: 21px; } #delprog, .seats .delbtn { width: 72px; } }
+#addteam, .addbtn { width: 36px; min-width: 36px; padding-left: 0; padding-right: 0; text-align: center; }
+#delprog, .seats .delbtn { width: 96px; padding-left: 0; padding-right: 0; text-align: center; }
+.lead { stroke: var(--pill); stroke-width: 2.5; stroke-dasharray: 8 6; opacity: .55; pointer-events: none; }
+h2 { font-weight: 600; font-size: 18px; margin: 0; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px 40px; align-items: start; }
+.cols > * { min-width: 0; }
+.tablewrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-weight: 500; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+td.num, th.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+tfoot td { font-weight: 600; border-bottom: 0; }
+.seats tr.m { cursor: pointer; }
+.seats tbody tr.hi { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.find { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.find input { font: 14px var(--display); padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--fg); width: 200px; max-width: 60vw; }
+main > section.stack { display: grid; gap: 10px; }
+.seats { max-width: 640px; }
+.ghrow { display: flex; align-items: center; gap: 12px; }
+.tn { min-width: 180px; font-weight: 500; cursor: text; }
+.tn input { font: 500 14px var(--display); width: 100%; padding: 4px 8px; margin: -5px 0; border: 1px solid var(--accent); border-radius: 4px; background: var(--paper); color: var(--fg); }
+.fold { display: inline-flex; align-items: center; gap: 10px; flex: none; background: none; border: 0; padding: 2px 0; color: var(--fg); font: 600 15px var(--display); cursor: pointer; text-align: left; }
+.fold .car { width: 0; height: 0; border-left: 6px solid var(--muted); border-top: 5px solid transparent; border-bottom: 5px solid transparent; transition: transform .15s; }
+.fold[aria-expanded="true"] .car { transform: rotate(90deg); }
+.seats tr.gh td.cnt { font-weight: 600; cursor: text; }
+.cnt input { font: 600 14px var(--mono); width: 5em; padding: 4px 6px; margin: -5px 0; border: 1px solid var(--accent); border-radius: 4px; background: var(--paper); color: var(--fg); }
+.seats tr.gh td { background: color-mix(in srgb, var(--fg) 4%, transparent); }
+.hint { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.nm { min-width: 180px; cursor: text; }
+.nm input { font: 14px var(--display); width: 100%; padding: 4px 8px; margin: -5px 0; border: 1px solid var(--accent); border-radius: 4px; background: var(--paper); color: var(--fg); }
+.saveerr { color: var(--clash); font: 600 18px var(--display); margin: 0; }
+.seats tr.m.sh td { background: var(--team-hi); color: var(--team-hi-ink); }
+.seats tbody.on tr.gh td { background: var(--team-hi); }
+.seats tbody.on .fold, .seats tbody.on .cnt, .seats tbody.on .tn { color: var(--team-hi-ink); }
+.seats tbody.on .fold .car { border-left-color: var(--team-hi-ink); }
+@media (prefers-reduced-motion: reduce) { .fold .car { transition: none; } }
+.brand { justify-content: flex-start; gap: 14px; min-height: 48px; }
+.brand .ltitle { font-weight: 600; line-height: 1.2; }
+.ltitle input { font-size: inherit !important; }
+.logo { width: 44px; height: 44px; flex: none; }
+.ctrls { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px 10px; margin-top: 38px; }
+.ctrl-left { display: grid; grid-template-columns: auto auto; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: var(--paper); }
+.ctrl-left .zoom { grid-column: 1 / -1; justify-self: stretch; display: flex; }
+.ctrl-left .zoom button { flex: 1 1 0; }
+.ctrl-left .undo { width: 100%; text-align: center; }
+.ctrl-right { display: grid; grid-template-columns: auto auto; gap: 8px; margin-left: auto; align-content: start; }
+.ctrl-right .undo { width: 100%; text-align: center; }
+.btnrow { display: contents; }
+#suggest, #undo { margin-top: 19px; }
+.btnrow .undo { padding: 5px 12px; }
+.undo.big { font-size: 16px; height: 44px; padding: 0 22px; border-radius: 8px; }
+/* zoom group: same bar height and text size as Suggest / Undo */
+.ctrls .zoom { border-radius: 8px; }
+.ctrls .zoom button { font-size: 16px; height: 42px; padding: 0 18px; }
+@media (min-width: 1200px) and (max-width: 1499px) { .ctrls .zoom button { padding: 0 10px; } .undo.big { padding: 0 13px; } .ctrl-right .undo { font-size: 12px; padding: 5px 8px; } }
+.prognote { margin: 0; color: var(--muted); font-size: 14px; max-width: 640px; }
+.tn[data-flag]::after { content: "  ⚠ " attr(data-flag); color: var(--clash); font: 500 12px var(--display); white-space: nowrap; }
+.notes { margin: 0; padding-left: 20px; color: var(--muted); font-size: 13px; display: grid; gap: 4px; max-width: 75ch; }
+/* buttons use the logo colours: blue #144878, light blue #9fd0f5, white */
+:root { --btn: #144878; --btn-hover: #0e3659; --btn-ink: #ffffff; --btn-soft: #9fd0f5; --btn-off: #dbeaf7; --btn-off-ink: #6f8ba3; --btn-line-ink: #144878; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --btn-off: #1f3448; --btn-off-ink: #7f9bb3; --btn-line-ink: #9fd0f5; } }
+:root[data-theme="dark"] { --btn-off: #1f3448; --btn-off-ink: #7f9bb3; --btn-line-ink: #9fd0f5; }
+.undo { background: var(--btn) !important; color: var(--btn-ink) !important; border-color: var(--btn) !important; }
+.undo:hover:not(:disabled) { background: var(--btn-hover) !important; border-color: var(--btn-hover) !important; }
+.undo:disabled { background: var(--btn-off) !important; color: var(--btn-off-ink) !important; border-color: var(--btn-off) !important; }
+.zoom { border-color: var(--btn-soft) !important; }
+.zoom button { background: var(--paper); color: var(--btn-line-ink); }
+.zoom button + button { border-left-color: var(--btn-soft) !important; }
+.zoom button[aria-pressed="true"] { background: var(--btn) !important; color: var(--btn-ink) !important; }
+.zoom button:hover:not([aria-pressed="true"]) { background: var(--btn-off); }
+.delbtn, .addbtn { color: var(--btn-line-ink) !important; border-color: var(--btn-soft) !important; background: var(--paper) !important; }
+.addbtn:hover { background: var(--btn-off) !important; }
+.delbtn:hover { color: var(--clash) !important; border-color: var(--clash) !important; }
+.ctrl-left { border-color: var(--btn-soft) !important; }
+/* wide screens: layout on the left (stays in view while the program scrolls), totals and PROGRAM on the right */
+@media (min-width: 1200px) {
+  main { max-width: none; grid-template-columns: 65vw minmax(0, 1fr); align-items: start; column-gap: 28px; }
+  .planwrap { height: calc(100vh - 114px); max-height: none; }
+  body { padding-bottom: 24px; }
+  main > section.stack:last-child .tn, main > section.stack:last-child .nm { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+  main > section.stack:last-child th, main > section.stack:last-child td { padding-left: 6px; padding-right: 6px; }
+  main > section.stack:last-child thead th:first-child { padding-left: 22px; }
+  main > section.stack:last-child { overflow-y: auto; }
+  main > section.stack:first-child { position: sticky; top: 16px; }
+  main > section.stack:last-child .totrow, main > section.stack:last-child .seats, .prognote { max-width: none; }
+}
+@media (max-width: 560px) { h1 { font-size: 22px; } .sheet { grid-template-columns: repeat(2, auto); } }
+</style>
+<main>
+  <section class="stack">
+    <div class="bar brand">
+      <svg class="logo" viewBox="0 0 48 48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="13" fill="#144878"/><g fill="#ffffff"><path d="M23.5 21.5 C21 12.8 15.2 8.4 7 7 C6.6 15.4 7.8 22.2 11.6 25.4 C14.9 28 19 28.2 23.5 27.5 Z"/><path d="M23.5 28.5 C16.4 28.4 11.6 31.4 10.5 41 C17.8 41.6 22.8 37.2 23.5 31.6 Z"/><g transform="translate(48 0) scale(-1 1)"><path d="M23.5 21.5 C21 12.8 15.2 8.4 7 7 C6.6 15.4 7.8 22.2 11.6 25.4 C14.9 28 19 28.2 23.5 27.5 Z"/><path d="M23.5 28.5 C16.4 28.4 11.6 31.4 10.5 41 C17.8 41.6 22.8 37.2 23.5 31.6 Z"/></g></g></svg>
+      <h2 id="ltitle" class="ltitle" data-def="Layout · New floor" title="Double-click to edit">Layout · New floor</h2>
+    </div>
+    <div class="planwrap" id="wrap">
+      <svg id="plan" data-ext="0 0 2400 1700" viewBox="-250 -250 2900 2200" role="img" aria-labelledby="pt pd">
+        <title id="pt">Seat Plan</title>
+        <desc id="pd"></desc>
+        <g id="bgwrap"></g>
+        <g id="desks"></g>
+        <g id="teams"></g>
+      </svg>
+    </div>
+  </section>
+  <section class="stack">
+    <div class="totrow">
+  <h2 class="tot"><span class="ti">Total seats: <span id="tottot">0</span><span class="sep">·</span></span><span class="ti">Used: <span id="totused">0</span><span class="sep">·</span></span><span class="ti">Available: <span id="totfree">0</span></span></h2>
+    </div>
+    <div class="ctrls">
+      <div class="ctrl-left">
+        <div class="zoom" role="group" aria-label="Zoom">
+          <button type="button" id="z1" data-z="1" aria-pressed="true">Fit</button>
+          <button type="button" id="z2" data-z="2" aria-pressed="false">2×</button>
+          <button type="button" id="z3" data-z="3.2" aria-pressed="false">3×</button>
+        </div>
+        <div class="btnrow">
+          <button type="button" id="suggest" class="undo big" aria-label="Suggest a seating">Suggest</button>
+          <button type="button" id="undo" class="undo big" disabled aria-label="Undo last change">Undo</button>
+        </div>
+      </div>
+      <div class="ctrl-right">
+        <div class="btnrow"><button type="button" id="uplayout" class="undo tip" data-tip="update or replace the floor plan (PDF or image)" aria-label="Upload layout">Upload layout</button><button type="button" id="exp-png" class="undo tip" data-tip="save the layout as a picture (JPEG)" aria-label="Export layout picture">Export</button></div>
+        <input type="file" id="layfile" accept=".pdf,.png,.jpg,.jpeg" hidden>
+        <div class="btnrow"><button type="button" id="upload" class="undo tip" data-tip="add teams from an Excel or CSV file" aria-label="Upload program">Upload program</button><button type="button" id="exp-xlsx" class="undo tip" data-tip="save the program as an Excel file" aria-label="Export program">Export</button></div>
+        <input type="file" id="upfile" accept=".csv,.xlsx,.xls,.txt" hidden>
+      </div>
+    </div>
+    <p class="saveerr" id="laymsg" hidden></p>
+    <p class="saveerr" id="shortmsg" hidden></p>
+    <p class="saveerr" id="saveerr" hidden></p>
+    <div class="totrow tabletitle"><h2>PROGRAM</h2></div>
+    <p class="prognote" id="prognote" hidden></p>
+    <div class="tablewrap"><table class="seats" id="srows">
+      <thead><tr><th class="num">#</th><th>Name</th><th class="num">Seat</th><th class="del"><span class="acts"><button type="button" id="addteam" class="undo tip" data-tip="add team" aria-label="Add team">+</button><span class="delwrap"><button type="button" id="delprog" class="delbtn tip" data-tip="delete the whole program" aria-label="Delete all">Delete all</button></span></span></th></tr></thead>
+    </table></div>
+  </section>
+</main>
+<script>
+var EMBED = {"v": 1794390941597, "extent": [0, 0, 2400, 1700], "margin": 250, "heading": "Layout · New floor", "desc": "No floor plan yet", "lskey": "edits:Seat Plan", "img": null, "desks": [], "sides": {}};
+if (window.__edenLS) EMBED.lskey = window.__edenLS;
+// ---- Layout data. The plan is drawn from EMBED (built by Claude) or, when newer, from the automatic
+// analysis of an uploaded PDF saved in the database (doc plan/current). Upload layout runs that analysis here.
+var LAYOUT = null, ANALYZING = false;
+// Team markers (pill + name + "seats short") are drawn 1.6× around their own center.
+var MK_SCALE = 1.6;
+function scaleMarkers() {
+  document.querySelectorAll('#teams .team').forEach(function (g) {
+    if (g.querySelector(':scope > g.mkr')) return;
+    var r = g.querySelector('rect'); if (!r) return;
+    var cx = +r.getAttribute('x') + +r.getAttribute('width') / 2, cy = +r.getAttribute('y') + +r.getAttribute('height') / 2;
+    var w = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    w.setAttribute('class', 'mkr');
+    w.setAttribute('transform', 'translate(' + cx + ' ' + cy + ') scale(' + MK_SCALE + ') translate(' + (-cx) + ' ' + (-cy) + ')');
+    while (g.firstChild) w.appendChild(g.firstChild);
+    g.appendChild(w);
+  });
+}
+window.__scaleMarkers = scaleMarkers;
+function lnote(t, ok) { var m = document.getElementById('laymsg'); if (!m) return; m.textContent = t || ''; m.hidden = !t; m.classList.toggle('ok', !!ok); }
+function xesc(v) { return String(v).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+function f1(v) { return (Math.round(v * 10) / 10).toFixed(1); }
+function sideOf(E, b, outside) {
+  var cx = (b[0] + b[2]) / 2, cy = (b[1] + b[3]) / 2;
+  var dN = cy - E[1], dS = E[3] - cy, dW = cx - E[0], dE = E[2] - cx, m = Math.min(dN, dS, dW, dE);
+  return m > 400 && !outside ? 'I' : m === dN ? 'N' : m === dS ? 'S' : m === dW ? 'W' : 'E';
+}
+function renderLayout(L) {
+  LAYOUT = L;
+  var E = L.extent, X0 = E[0], Y0 = E[1], X1 = E[2], Y1 = E[3], M = L.margin || 250;
+  var plan = document.getElementById('plan');
+  plan.setAttribute('data-ext', X0 + ' ' + Y0 + ' ' + X1 + ' ' + Y1);
+  var VX = X0 - M, VY = Y0 - M, VW = X1 - X0 + 2 * M, VH = Y1 - Y0 + 2 * M;
+  plan.setAttribute('viewBox', VX + ' ' + VY + ' ' + VW + ' ' + VH);
+  var IB = L.imgBox || E;
+  var bg = '<rect x="' + VX + '" y="' + VY + '" width="' + VW + '" height="' + VH + '" fill="var(--plan)"/>';
+  if (L.img) bg += '<g class="bgimg"><image id="bgimage" href="' + xesc(window.__blobUrl ? window.__blobUrl(L.img) : L.img) + '" x="' + IB[0] + '" y="' + IB[1] + '" width="' + (IB[2] - IB[0]) + '" height="' + (IB[3] - IB[1]) + '"/></g>';
+  else bg += '<g class="emptyplan"><rect x="' + X0 + '" y="' + Y0 + '" width="' + (X1 - X0) + '" height="' + (Y1 - Y0) + '" rx="24"/><text x="' + (X0 + X1) / 2 + '" y="' + ((Y0 + Y1) / 2 - 40) + '">No layout yet</text><text class="sub" x="' + (X0 + X1) / 2 + '" y="' + ((Y0 + Y1) / 2 + 50) + '">Press Upload layout to add the floor plan</text></g>';
+  document.getElementById('bgwrap').innerHTML = bg;
+  var D = L.desks || [], teams = {}, order = [], dk = [];
+  D.forEach(function (d, i) {
+    var t = String(d[4]), s = i + 1, x0 = d[0], y0 = d[1], x1 = d[2], y1 = d[3], w = x1 - x0, h = y1 - y0;
+    if (!teams[t]) { teams[t] = []; order.push(t); }
+    teams[t].push({ s: s, r: d });
+    dk.push('<g class="dk" data-s="' + s + '" data-t="' + t + '" data-x="' + x0 + '" data-y="' + y0 + '" data-w="' + f1(w) + '" data-h="' + f1(h) + '"><rect x="' + x0 + '" y="' + y0 + '" width="' + f1(w) + '" height="' + f1(h) + '"/><text class="dn" x="' + f1((x0 + x1) / 2) + '" y="' + f1((y0 + y1) / 2) + '">' + s + '</text><text class="pn" x="' + f1((x0 + x1) / 2) + '" y="' + f1((y0 + y1) / 2) + '"></text></g>');
+  });
+  document.getElementById('desks').innerHTML = dk.join('');
+  // team markers: outside the building on the side given (or nearest), spread so markers on one side never overlap
+  var mk = order.map(function (t) {
+    var ds = teams[t], b = [Infinity, Infinity, -Infinity, -Infinity];
+    ds.forEach(function (e) { b[0] = Math.min(b[0], e.r[0]); b[1] = Math.min(b[1], e.r[1]); b[2] = Math.max(b[2], e.r[2]); b[3] = Math.max(b[3], e.r[3]); });
+    var side = (L.sides && L.sides[t]) || sideOf(E, b), cx, y;
+    if (side === 'N') { cx = (b[0] + b[2]) / 2; y = Y0 - 60; }
+    else if (side === 'S') { cx = (b[0] + b[2]) / 2; y = Y1 + 70; }
+    else if (side === 'W') { cx = X0 - 100; y = (b[1] + b[3]) / 2; }
+    else if (side === 'E') { cx = X1 + 100; y = (b[1] + b[3]) / 2; }
+    else { cx = b[0] - 100; y = (b[1] + b[3]) / 2; }
+    return { t: t, b: b, side: side, cx: cx, y: y };
+  });
+  ['N', 'S', 'W', 'E'].forEach(function (sd) {
+    var horiz = sd === 'N' || sd === 'S', key = horiz ? 'cx' : 'y', gap = horiz ? 280 : 230;
+    var list = mk.filter(function (m) { return m.side === sd; }).sort(function (a, b) { return a[key] - b[key]; });
+    for (var i = 1; i < list.length; i++) if (list[i][key] - list[i - 1][key] < gap) list[i][key] = list[i - 1][key] + gap;
+  });
+  var tm = [];
+  mk.forEach(function (m) {
+    var b = m.b, cx = m.cx, y = m.y, side = m.side, lead, lab = 'T' + m.t, tw = lab.length * 25 + 44;
+    var clx = Math.max(b[0], Math.min(b[2], cx)), cly = Math.max(b[1], Math.min(b[3], y));
+    if (side === 'N') lead = [cx, y + 32, clx, b[1]];
+    else if (side === 'S') lead = [cx, y - 32, clx, b[3]];
+    else if (side === 'W') lead = [cx + 60, y, b[0], cly];
+    else if (side === 'E') lead = [cx - 60, y, b[2], cly];
+    else lead = [cx + 47, y, b[0], cly];
+    tm.push('<line class="lead" data-t="' + m.t + '" x1="' + f1(lead[0]) + '" y1="' + f1(lead[1]) + '" x2="' + f1(lead[2]) + '" y2="' + f1(lead[3]) + '"/>');
+    tm.push('<g class="team" data-t="' + m.t + '" role="button" tabindex="0" aria-pressed="false" aria-label="Shade team ' + lab + '"><rect x="' + f1(cx - tw / 2) + '" y="' + f1(y - 32) + '" width="' + f1(tw) + '" height="64" rx="32"/><text x="' + f1(cx) + '" y="' + f1(y) + '">' + lab + '</text><text class="tname" x="' + f1(cx) + '" y="' + f1(side === 'N' ? y - 68 : y + 68) + '"></text><text class="short" x="' + f1(cx) + '" y="' + f1(side === 'N' ? y - 122 : y + 122) + '"></text></g>');
+  });
+  document.getElementById('teams').innerHTML = tm.join('');
+  scaleMarkers();
+  var rows = order.map(function (t) {
+    var ds = teams[t];
+    return '<tbody class="grp" data-t="' + t + '"><tr class="gh"><td><button type="button" class="fold" aria-expanded="false"><span class="car" aria-hidden="true"></span>T' + t + '</button></td><td class="tn ed" data-k="teams" data-id="' + t + '" title="Double-click to edit"></td><td class="num cnt ed" data-k="need" data-id="' + t + '" data-def="' + ds.length + '" title="Double-click to edit">' + ds.length + '</td><td class="del"><span class="acts"><button type="button" class="addbtn tip" data-tip="add team member" data-t="' + t + '" aria-label="Add a person to team T' + t + '">+</button><button type="button" class="delbtn" data-t="' + t + '" aria-label="Delete team T' + t + '">Delete</button></span></td></tr>' +
+      ds.map(function (e, i) { return '<tr data-s="' + e.s + '" class="m" hidden><td class="num">' + (i + 1) + '</td><td class="nm ed" data-k="names" data-id="' + e.s + '" title="Double-click to edit"></td><td class="num">' + e.s + '</td><td class="del"><button type="button" class="delbtn" data-s="' + e.s + '" aria-label="Delete this person">Delete</button></td></tr>'; }).join('') + '</tbody>';
+  }).join('');
+  var tbl = document.getElementById('srows');
+  tbl.querySelectorAll('tbody').forEach(function (b) { b.remove(); });
+  tbl.insertAdjacentHTML('beforeend', rows);
+  document.getElementById('tottot').textContent = D.length;
+  document.getElementById('totused').textContent = D.length;
+  document.getElementById('totfree').textContent = 0;
+  document.getElementById('pd').textContent = (L.desc || 'Floor plan') + ' with all ' + D.length + ' workstation desks shaded light blue, numbered 1 to ' + D.length + ', and grouped into ' + order.length + ' teams.';
+  if (L.heading) { var lt = document.getElementById('ltitle'); lt.dataset.def = L.heading; lt.textContent = L.heading; }
+  // an uploaded plan picture: swap in an inline copy so "Export → Layout as picture" includes it
+  if (L.img && !/^data:/.test(L.img) && window.fetch) fetch(window.__blobUrl ? window.__blobUrl(L.img) : L.img).then(function (r) { return r.ok ? r.blob() : null; }).then(function (b) {
+    if (!b) return; var fr = new FileReader(); fr.onload = function () { var im = document.getElementById('bgimage'); if (im) im.setAttribute('href', fr.result); }; fr.readAsDataURL(b);
+  }).catch(function () {});
+}
+// Start: draw the built-in layout, then (up to 4 s) check the database for a newer automatic one.
+function pickLayout() {
+  return new Promise(function (ok) {
+    var done = false; function fin(L) { if (!done) { done = true; ok(L); } }
+    setTimeout(function () { fin(null); }, 15000);
+    if (!(window.claude && window.claude.use)) return fin(null);
+    window.claude.use('db').then(function (d) {
+      if (!d) return fin(null);
+      d.doc('plan/current').get().then(function (s) {
+        var L = s.exists ? s.data() : null;
+        fin(L && L.v > EMBED.v && L.desks && L.extent ? L : null);
+      }, function () { fin(null); });
+    }, function () { fin(null); });
+  });
+}
+function watchPlan() {
+  if (!(window.claude && window.claude.use)) return;
+  window.claude.use('db').then(function (d) {
+    if (!d) return;
+    d.doc('plan/current').onSnapshot(function (s) {
+      var L = s.exists ? s.data() : null;
+      if (!ANALYZING && L && LAYOUT && L.v > LAYOUT.v && L.v > EMBED.v) { lnote('A new layout was saved. Loading it… (reload the page if it does not appear)', true); setTimeout(function () { location.reload(); }, 800); }
+    }, function () {});
+  });
+}
+function START() {
+  renderLayout(EMBED);
+  pickLayout().then(function (L) { if (L) renderLayout(L); MAIN(); watchPlan(); });
+}
+
+// ---- Automatic analysis of an uploaded PDF: read its drawing lines, find the desks, group them into teams.
+var PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+function loadScript(src) { return new Promise(function (ok, bad) { var s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = function () { bad({ code: 'load' }); }; document.head.appendChild(s); }); }
+function loadPdf() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  // the worker script first: pdf.js then runs it on this page (no separate worker needed)
+  return loadScript(PDFJS + 'pdf.worker.min.js').then(function () { return loadScript(PDFJS + 'pdf.min.js'); }).then(function () {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js'; return window.pdfjsLib;
+  });
+}
+// straight horizontal (H: [x0, y, x1]) and vertical (V: [y0, x, y1]) segments 20–110 pt long, in page points (top-left origin)
+function pdfSegments(lib, page, vp) {
+  return page.getOperatorList().then(function (ol) {
+    var O = lib.OPS, U = lib.Util, fn = ol.fnArray, ar = ol.argsArray, ctm = [1, 0, 0, 1, 0, 0], st = [], H = [], V = [];
+    function add(M, x0, y0, x1, y1) {
+      var ax = M[0] * x0 + M[2] * y0 + M[4], ay = M[1] * x0 + M[3] * y0 + M[5], bx = M[0] * x1 + M[2] * y1 + M[4], by = M[1] * x1 + M[3] * y1 + M[5];
+      var dx = Math.abs(bx - ax), dy = Math.abs(by - ay);
+      if (dy < 0.3 && dx > 20 && dx < 110) H.push([Math.min(ax, bx), (ay + by) / 2, Math.max(ax, bx)]);
+      else if (dx < 0.3 && dy > 20 && dy < 110) V.push([Math.min(ay, by), (ax + bx) / 2, Math.max(ay, by)]);
+    }
+    for (var i = 0; i < fn.length; i++) {
+      var f = fn[i], a = ar[i];
+      if (f === O.save) st.push(ctm.slice());
+      else if (f === O.restore) { if (st.length) ctm = st.pop(); }
+      else if (f === O.transform) ctm = U.transform(ctm, a);
+      else if (f === O.paintFormXObjectBegin) { st.push(ctm.slice()); if (a && a[0]) ctm = U.transform(ctm, a[0]); }
+      else if (f === O.paintFormXObjectEnd) { if (st.length) ctm = st.pop(); }
+      else if (f === O.constructPath) {
+        var M = U.transform(vp.transform, ctm), ops = a[0], c = a[1], j = 0, cx = 0, cy = 0, sx = 0, sy = 0;
+        for (var k = 0; k < ops.length; k++) {
+          var o = ops[k];
+          if (o === O.moveTo) { cx = sx = c[j]; cy = sy = c[j + 1]; j += 2; }
+          else if (o === O.lineTo) { add(M, cx, cy, c[j], c[j + 1]); cx = c[j]; cy = c[j + 1]; j += 2; }
+          else if (o === O.curveTo) { cx = c[j + 4]; cy = c[j + 5]; j += 6; }
+          else if (o === O.curveTo2 || o === O.curveTo3) { cx = c[j + 2]; cy = c[j + 3]; j += 4; }
+          else if (o === O.closePath) { add(M, cx, cy, sx, sy); cx = sx; cy = sy; }
+          else if (o === O.rectangle) { var x = c[j], y = c[j + 1], w = c[j + 2], h = c[j + 3]; add(M, x, y, x + w, y); add(M, x + w, y, x + w, y + h); add(M, x + w, y + h, x, y + h); add(M, x, y + h, x, y); cx = sx = x; cy = sy = y; j += 4; }
+        }
+      }
+    }
+    return { H: H, V: V };
+  });
+}
+// Desks = two parallel, equal, aligned edges a desk-size apart (desks 160×70, 140×70, 160×80 cm at 1:50;
+// square or rounded corners). Candidates that overlap each other are not desks (lounge seats, tables) and are dropped.
+function findDesks(S) {
+  var K = 72 / 2.54 / 50, R = [];
+  function uniq(list) { var seen = {}, out = []; list.forEach(function (s) { var k = s.map(function (v) { return Math.round(v * 5); }).join(','); if (!seen[k]) { seen[k] = 1; out.push(s); } }); return out; }
+  function index(list) { var m = {}; list.forEach(function (s) { var k = Math.round(s[0]) + '|' + Math.round(s[2]); (m[k] = m[k] || []).push(s); }); return m; }
+  var H = uniq(S.H), V = uniq(S.V), mH = index(H), mV = index(V);
+  function scan(list, m, len, gap, make) {
+    list.forEach(function (a) {
+      var L = a[2] - a[0];
+      if (Math.abs(L - len) > 0.8 && Math.abs(L - (len - 5.7)) > 0.8) return;
+      var r0 = Math.round(a[0]), r2 = Math.round(a[2]);
+      for (var i = -1; i <= 1; i++) for (var j = -1; j <= 1; j++) (m[(r0 + i) + '|' + (r2 + j)] || []).forEach(function (b) {
+        var g = b[1] - a[1];
+        if (Math.abs(g - gap) < 1.5 && Math.abs(a[0] - b[0]) < 0.8 && Math.abs(a[2] - b[2]) < 0.8) R.push(make(a, b, (len - L) / 2));
+      });
+    });
+  }
+  [[160, 70], [140, 70], [160, 80]].forEach(function (sz) {
+    var A = sz[0] * K, B = sz[1] * K;
+    [[A, B], [B, A]].forEach(function (p) {
+      scan(H, mH, p[0], p[1], function (a, b, pad) { return [a[0] - pad, a[1], a[2] + pad, b[1]]; });
+      scan(V, mV, p[0], p[1], function (a, b, pad) { return [a[1], a[0] - pad, b[1], a[2] + pad]; });
+    });
+  });
+  // office desks drawn with one long and one short edge only (the rest hidden by chairs or a return): a square corner
+  var C = [], A8 = 160 * K, B8 = 80 * K;
+  function corners(hs, vs, a, b, flip) {
+    hs.forEach(function (h) {
+      if (Math.abs((h[2] - h[0]) - a) > 0.8) return;
+      vs.forEach(function (v) {
+        if (Math.abs((v[2] - v[0]) - b) > 0.8) return;
+        var atEnd = Math.abs(v[1] - h[0]) < 0.8 || Math.abs(v[1] - h[2]) < 0.8, below = Math.abs(v[0] - h[1]) < 0.8, above = Math.abs(v[2] - h[1]) < 0.8;
+        if (!atEnd || !(below || above)) return;
+        var r = below ? [h[0], h[1], h[2], h[1] + b] : [h[0], h[1] - b, h[2], h[1]];
+        C.push(flip ? [r[1], r[0], r[3], r[2]] : r);
+      });
+    });
+  }
+  var Hb = H.filter(function (h) { var L = h[2] - h[0]; return Math.abs(L - A8) < 0.8 || Math.abs(L - B8) < 0.8; });
+  var Vb = V.filter(function (v) { var L = v[2] - v[0]; return Math.abs(L - A8) < 0.8 || Math.abs(L - B8) < 0.8; });
+  corners(Hb, Vb, A8, B8, false);   // horizontal desk: long top or bottom edge, short side edge
+  corners(Vb, Hb, A8, B8, true);    // upright desk: long side edge, short top or bottom edge
+  var D = [];
+  R.forEach(function (r) { if (!D.some(function (q) { return Math.abs(r[0] - q[0]) < 3 && Math.abs(r[1] - q[1]) < 3 && Math.abs(r[2] - q[2]) < 3 && Math.abs(r[3] - q[3]) < 3; })) D.push(r); });
+  var bad = D.map(function () { return false; });
+  for (var i = 0; i < D.length; i++) for (var j = 0; j < i; j++) {
+    var a = D[i], b = D[j], w = Math.min(a[2], b[2]) - Math.max(a[0], b[0]), h = Math.min(a[3], b[3]) - Math.max(a[1], b[1]);
+    if (w > 0 && h > 0 && w * h > 0.2 * Math.min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1]))) bad[i] = bad[j] = true;
+  }
+  D = D.filter(function (_, i) { return !bad[i]; });
+  // a gap between two desks of a row reads like a desk too: drop a candidate squeezed between two desks of another size
+  function sq(r, o) {
+    var vt = D.filter(function (q) { return q !== r && Math.abs(q[0] - r[0]) < 1 && Math.abs(q[2] - r[2]) < 1; });
+    var hz = D.filter(function (q) { return q !== r && Math.abs(q[1] - r[1]) < 1 && Math.abs(q[3] - r[3]) < 1; });
+    var hv = r[3] - r[1], wv = r[2] - r[0];
+    var up = vt.some(function (q) { return Math.abs(q[3] - r[1]) < 1 && Math.abs((q[3] - q[1]) - hv) > 5; }), dn = vt.some(function (q) { return Math.abs(q[1] - r[3]) < 1 && Math.abs((q[3] - q[1]) - hv) > 5; });
+    var lf = hz.some(function (q) { return Math.abs(q[2] - r[0]) < 1 && Math.abs((q[2] - q[0]) - wv) > 5; }), rt = hz.some(function (q) { return Math.abs(q[0] - r[2]) < 1 && Math.abs((q[2] - q[0]) - wv) > 5; });
+    return (up && dn) || (lf && rt);
+  }
+  D = D.filter(function (r) { return !sq(r); });
+  function ov(a, b, k) { var w = Math.min(a[2], b[2]) - Math.max(a[0], b[0]), h = Math.min(a[3], b[3]) - Math.max(a[1], b[1]); return w > k && h > k; }
+  var CD = [];
+  C.forEach(function (r) { if (!D.concat(CD).some(function (q) { return ov(r, q, 3); })) CD.push(r); });
+  var cbad = CD.map(function () { return false; });
+  for (var i2 = 0; i2 < CD.length; i2++) for (var j2 = 0; j2 < i2; j2++) if (ov(CD[i2], CD[j2], 3)) cbad[i2] = cbad[j2] = true;
+  return D.concat(CD.filter(function (_, i) { return !cbad[i]; })).map(function (r) { return r.map(function (v) { return Math.round(v * 10) / 10; }); });
+}
+// Teams = groups of desks less than 110 pt (about 2 m) apart. Numbered top to bottom, then left to right;
+// seats inside a team top to bottom, then left to right.
+function buildLayout(D, name) {
+  var par = D.map(function (_, i) { return i; });
+  function f(i) { while (par[i] !== i) i = par[i] = par[par[i]]; return i; }
+  for (var i = 0; i < D.length; i++) for (var j = 0; j < i; j++) {
+    var a = D[i], b = D[j], gx = Math.max(0, Math.max(a[0], b[0]) - Math.min(a[2], b[2])), gy = Math.max(0, Math.max(a[1], b[1]) - Math.min(a[3], b[3]));
+    if (Math.sqrt(gx * gx + gy * gy) < 110) par[f(i)] = f(j);
+  }
+  var groups = {};
+  D.forEach(function (d, i) { (groups[f(i)] = groups[f(i)] || []).push(d); });
+  var G = Object.keys(groups).map(function (k) {
+    var ds = groups[k], x0 = Math.min.apply(null, ds.map(function (d) { return d[0]; })), y0 = Math.min.apply(null, ds.map(function (d) { return d[1]; }));
+    return { ds: ds, x0: x0, y0: y0 };
+  });
+  G.sort(function (a, b) { return Math.round(a.y0 / 250) - Math.round(b.y0 / 250) || a.x0 - b.x0; });
+  var E = [Infinity, Infinity, -Infinity, -Infinity];
+  D.forEach(function (d) { E[0] = Math.min(E[0], d[0]); E[1] = Math.min(E[1], d[1]); E[2] = Math.max(E[2], d[2]); E[3] = Math.max(E[3], d[3]); });
+  E = [Math.floor(E[0] - 150), Math.floor(E[1] - 150), Math.ceil(E[2] + 150), Math.ceil(E[3] + 150)];
+  var out = [], sides = {};
+  G.forEach(function (g, ti) {
+    var t = ti + 1;
+    g.ds.sort(function (a, b) { return Math.round((a[1] + a[3]) / 60) - Math.round((b[1] + b[3]) / 60) || (a[0] - b[0]); });
+    g.ds.forEach(function (d) { out.push([d[0], d[1], d[2], d[3], t]); });
+    var b = [Infinity, Infinity, -Infinity, -Infinity];
+    g.ds.forEach(function (d) { b[0] = Math.min(b[0], d[0]); b[1] = Math.min(b[1], d[1]); b[2] = Math.max(b[2], d[2]); b[3] = Math.max(b[3], d[3]); });
+    sides[t] = sideOf(E, b, true);   // automatic layouts: every marker outside the building, on its nearest side
+  });
+  var base = String(name || 'New floor').replace(/\.[^.]+$/, '');
+  return { extent: E, margin: 250, desks: out, sides: sides, teams: G.length, heading: 'Layout · ' + base, desc: 'The ' + base + ' floor plan' };
+}
+// the plan picture: the building area, grayscale, light greys to white, a few grey levels (small PNG)
+function planPicture(page, E) {
+  var W = E[2] - E[0], H = E[3] - E[1], S = Math.min(1.5, Math.sqrt(14e6 / (W * H)));
+  var vp = page.getViewport({ scale: S, offsetX: -E[0] * S, offsetY: -E[1] * S });
+  var c = document.createElement('canvas'); c.width = Math.round(W * S); c.height = Math.round(H * S);
+  var ctx = c.getContext('2d'); ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, c.width, c.height);
+  return page.render({ canvasContext: ctx, viewport: vp }).promise.then(function () {
+    var im = ctx.getImageData(0, 0, c.width, c.height), d = im.data;
+    for (var i = 0; i < d.length; i += 4) { var v = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; v = v > 235 ? 255 : Math.round(v / 51) * 51; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
+    ctx.putImageData(im, 0, 0);
+    return new Promise(function (ok, bad) { c.toBlob(function (b) { if (b) ok(b); else bad({ code: 'png' }); }, 'image/png'); });
+  });
+}
+// a new floor makes the old seat numbers meaningless: clear names, seats and moves of the drawn teams; keep added teams
+function clearOldSeating(db) {
+  var cols = ['names', 'teams', 'need', 'moves', 'assign', 'deleted', 'gone', 'flags', 'pseat'], p = Promise.resolve();
+  cols.forEach(function (c) {
+    p = p.then(function () { return db.collection(c).get(); }).then(function (snap) {
+      var q = Promise.resolve();
+      snap.docs.forEach(function (d) { if (c === 'assign' || c === 'moves' || c === 'pseat' || /^[0-9]+(-x[0-9]+)?$/.test(d.id)) q = q.then(function () { return db.collection(c).doc(d.id).delete(); }); });
+      return q;
+    });
+  });
+  return p;
+}
+window.__autoLayout = function (file, db, recId) {
+  if (!db) { lnote('Layout received, but automatic analysis needs the page database. Try a vector PDF of the floor plan.'); return; }
+  ANALYZING = true;
+  var lib, page, L;
+  lnote('Analyzing ' + file.name + '… reading the drawing', true);
+  loadPdf().then(function (l) { lib = l; return file.arrayBuffer(); })
+    .then(function (buf) { return lib.getDocument({ data: new Uint8Array(buf) }).promise; })
+    .then(function (pdf) { return pdf.getPage(1); })
+    .then(function (p) { page = p; return pdfSegments(lib, page, page.getViewport({ scale: 1 })); })
+    .then(function (S) {
+      var D = findDesks(S);
+      if (D.length < 2) throw { code: 'nodesks' };
+      L = buildLayout(D, file.name);
+      lnote('Found ' + D.length + ' desks in ' + L.teams + ' teams. Drawing the plan…', true);
+      return planPicture(page, L.extent);
+    })
+    .then(function (png) { return window.claude.use('assets').then(function (a) { if (!a) throw { code: 'not_granted' }; return a.upload(png, { type: 'image/png' }); }); })
+    .then(function (up) {
+      L.img = '/_blob/' + up.id; L.imgAsset = up.id; L.v = Date.now(); L.source = recId || ''; L.file = file.name;
+      lnote('Saving the new layout…', true);
+      return clearOldSeating(db).then(function () { return db.doc('plan/current').set(L); });
+    })
+    .then(function () {
+      if (recId) db.collection('layouts').doc(recId).update({ status: 'done (automatic)', seats: L.desks.length, teams: L.teams }).catch(function () {});
+      try { localStorage.removeItem(EMBED.lskey); localStorage.removeItem(EMBED.lskey + ':undo'); } catch (e) {}
+      lnote('Done: ' + L.desks.length + ' seats in ' + L.teams + ' teams. Loading the new plan… (reload the page if it does not appear)', true);
+      setTimeout(function () { location.reload(); }, 900);
+    })
+    .catch(function (e) {
+      ANALYZING = false;
+      var c = e && e.code;
+      if (recId) db.collection('layouts').doc(recId).update({ status: 'waiting for Claude' }).catch(function () {});
+      lnote(c === 'nodesks' ? 'No desks could be found in ' + file.name + '. Try a vector PDF of the floor plan.'
+        : c === 'not_granted' ? 'Saving the plan needs edit access to this page.'
+        : c === 'load' ? 'The PDF reader could not load. Check the connection and upload again.'
+        : 'The layout could not be analyzed automatically. Try a vector PDF of the floor plan.');
+    });
+};
+
+function MAIN() {
+  var plan = document.getElementById('plan'), wrap = document.getElementById('wrap');
+  var btns = document.querySelectorAll('.zoom button');
+  // Zoom: Fit = the whole plan inside the box (width and height, no scrolling); 2× and 3× zoom from there.
+  var zoomF = 1;
+  function fitWidth() {
+    var vb = plan.viewBox.baseVal, availW = wrap.clientWidth || wrap.getBoundingClientRect().width;
+    var availH = (window.innerWidth >= 1200 ? wrap.clientHeight : window.innerHeight * 0.82) - 2;
+    if (!vb || !vb.width || !vb.height) return availW;
+    return Math.max(120, Math.min(availW, availH * vb.width / vb.height));
+  }
+  function applyZoom() {
+    var w = fitWidth() * zoomF;
+    plan.style.width = Math.floor(w) + 'px';
+    wrap.classList.toggle('zoomed', zoomF > 1);
+  }
+  btns.forEach(function (b) { b.addEventListener('click', function () {
+    zoomF = parseFloat(b.dataset.z) || 1; applyZoom();
+    btns.forEach(function (o) { o.setAttribute('aria-pressed', o === b ? 'true' : 'false'); });
+  }); });
+  window.addEventListener('resize', applyZoom);
+  window.__applyZoom = applyZoom;
+  // Wide screens: the PROGRAM title starts at 1/3 of the screen height + 2.3 cm (87 px) (totals and Suggest stay at the top).
+  // totals line: font size chosen so the whole line spans the width above the PROGRAM table
+  function fitTotals() {
+    var t = document.querySelector('.tot'), sec = t && t.closest('section'); if (!t) return;
+    var scs = getComputedStyle(sec), avail = sec.clientWidth - parseFloat(scs.paddingLeft) - parseFloat(scs.paddingRight); if (!avail) return;
+    t.style.fontSize = '100px';
+    var w = t.scrollWidth || 1; t.style.fontSize = '100px';
+    var range = document.createRange(); range.selectNodeContents(t); w = range.getBoundingClientRect().width || w;
+    t.style.fontSize = Math.max(14, Math.min(80, 100 * avail / w * 0.999)).toFixed(2) + 'px';
+    var pt = document.querySelector('.tabletitle h2'); if (pt) pt.style.fontSize = t.style.fontSize;   // PROGRAM title = same text as the totals
+    var lt = document.getElementById('ltitle'); if (lt) lt.style.fontSize = t.style.fontSize;          // layout title = same size too
+  }
+  // wide screens: the right frame has the same top and height as the plan frame
+  function alignTotalsTop() {
+    var sec = document.querySelector('main > section.stack:last-child'), pw = document.getElementById('wrap');
+    if (!sec || !pw) return;
+    if (window.innerWidth < 1200) { sec.style.marginTop = ''; sec.style.height = ''; pw.style.height = ''; return; }
+    // the plan box ends 24 px above the bottom of the window, so the page itself never scrolls
+    var want = Math.max(320, Math.floor(window.innerHeight - (pw.getBoundingClientRect().top + window.scrollY) - 24));
+    if (Math.abs((parseFloat(pw.style.height) || 0) - want) > 1) { pw.style.height = want + 'px'; if (window.__applyZoom) window.__applyZoom(); }
+    var over = document.documentElement.scrollHeight - window.innerHeight;
+    if (over > 0) { pw.style.height = Math.max(320, (parseFloat(pw.style.height) || want) - over) + 'px'; if (window.__applyZoom) window.__applyZoom(); }
+    var cur = parseFloat(sec.style.marginTop) || 0;
+    var off = pw.getBoundingClientRect().top - (sec.getBoundingClientRect().top - cur);
+    sec.style.marginTop = Math.max(0, Math.round(off)) + 'px';
+    sec.style.height = pw.offsetHeight + 'px';
+  }
+  function alignProgram() {
+    fitTotals();
+    alignTotalsTop();
+    var el = document.querySelector('.tabletitle'); if (!el) return;
+    if (window.innerWidth < 1200) { el.style.marginTop = ''; return; }
+    var cur = parseFloat(el.style.marginTop) || parseFloat(getComputedStyle(el).marginTop) || 0;
+    var sc = el.closest('section'), top = el.getBoundingClientRect().top + window.scrollY + (sc ? sc.scrollTop : 0) - cur;   // count the frame's own scroll, so a resize while it is scrolled does not push PROGRAM down
+    el.style.marginTop = Math.max(14, Math.round((window.innerHeight / 3 + 87) - top)) + 'px';
+  }
+  window.addEventListener('resize', alignProgram);
+  alignProgram();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(alignProgram);
+  setTimeout(alignProgram, 600);
+  applyZoom();
+  if (window.innerWidth < 700) document.getElementById('z2').click();
+  function deskOfRow(r) { var v = r && r.children[2] ? r.children[2].textContent.trim() : ''; return /^[0-9]+$/.test(v) ? v : ''; }
+  // the person row sitting at desk n now (by the Seat column), else the row with that id
+  function rowOfDesk(n) {
+    var hit = null;
+    document.querySelectorAll('#srows tbody.grp:not(.gone) tr.m').forEach(function (r) { if (!hit && !r.classList.contains('unused') && !r.classList.contains('pgone') && deskOfRow(r) === String(n)) hit = r; });
+    return hit || document.querySelector('#srows tr[data-s="' + n + '"]');
+  }
+  function hi(n, scroll) {
+    document.querySelectorAll('.hi').forEach(function (e) { e.classList.remove('hi'); });
+    var r = rowOfDesk(n);
+    document.querySelectorAll('.dk[data-s="' + n + '"]').forEach(function (x) { x.classList.add('hi'); });
+    var d = document.querySelector('#desks .dk[data-s="' + n + '"]');
+    if (r) { r.classList.add('hi'); setOpen(r.parentNode, true); }
+    if (scroll && d) {
+      if (zoomF === 1) document.getElementById('z3').click();
+      wrap.scrollIntoView({ block: 'nearest' });
+      requestAnimationFrame(function () {
+        var bb = d.getBoundingClientRect(), wb = wrap.getBoundingClientRect();
+        wrap.scrollLeft += (bb.left + bb.width / 2) - (wb.left + wb.width / 2);
+        wrap.scrollTop += (bb.top + bb.height / 2) - (wb.top + wb.height / 2);
+      });
+    }
+  }
+  // Pan: with the mouse, drag the plan to move around it (when zoomed in); touch screens scroll natively.
+  var pan = null, panMoved = false;
+  wrap.addEventListener('pointerdown', function (e) {
+    if (e.pointerType === 'touch' || e.button !== 0 || e.target.closest('.team')) return;
+    if (wrap.scrollWidth <= wrap.clientWidth + 1 && wrap.scrollHeight <= wrap.clientHeight + 1) return;
+    pan = { x: e.clientX, y: e.clientY, sl: wrap.scrollLeft, st: wrap.scrollTop, id: e.pointerId }; panMoved = false;
+  });
+  wrap.addEventListener('pointermove', function (e) {
+    if (!pan || e.pointerId !== pan.id) return;
+    var dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+    if (!panMoved && Math.abs(dx) + Math.abs(dy) < 5) return;
+    if (!panMoved) { panMoved = true; wrap.classList.add('panning'); try { wrap.setPointerCapture(e.pointerId); } catch (err) {} }
+    wrap.scrollLeft = pan.sl - dx; wrap.scrollTop = pan.st - dy; e.preventDefault();
+  });
+  function endPan(e) {
+    if (!pan) return; pan = null; wrap.classList.remove('panning');
+    try { wrap.releasePointerCapture(e.pointerId); } catch (err) {}
+    if (panMoved) setTimeout(function () { panMoved = false; }, 0);
+  }
+  wrap.addEventListener('pointerup', endPan); wrap.addEventListener('pointercancel', endPan);
+  wrap.addEventListener('click', function (e) { if (panMoved) { e.stopPropagation(); e.preventDefault(); } }, true);
+  // ---- Drag a person: with the mouse, drag a person's desk onto another desk. They move there; if someone sits
+  // there, the two swap. One Undo step. Suggest and moving the team clear personal moves.
+  var pd = null, pGhost = null, justMovedP = false;
+  function dropDeskAt(x, y) { var el = document.elementFromPoint(x, y); return el && el.closest ? el.closest('#desks .dk') : null; }
+  document.getElementById('desks').addEventListener('pointerdown', function (e) {
+    if (e.pointerType === 'touch' || e.button > 0) return;
+    var d = e.target.closest('.dk'); if (!d) return;
+    var r = rowOfDesk(d.dataset.s); if (!r || deskOfRow(r) !== d.dataset.s) return;
+    pd = { d: d, r: r, x: e.clientX, y: e.clientY, moving: false, over: null };
+    e.stopPropagation();
+  });
+  window.addEventListener('pointermove', function (e) {
+    if (!pd) return;
+    if (!pd.moving) {
+      if (Math.abs(e.clientX - pd.x) + Math.abs(e.clientY - pd.y) < 6) return;
+      pd.moving = true; pd.d.classList.add('src'); wrap.classList.add('pmoving');
+      pGhost = document.createElement('div'); pGhost.className = 'pdrag';
+      pGhost.textContent = (cap(store.names[pd.r.dataset.s] || '') || 'Seat ' + pd.d.dataset.s) + ' → drop on a desk';
+      document.body.appendChild(pGhost);
+    }
+    e.preventDefault();
+    pGhost.style.left = (e.clientX + 14) + 'px'; pGhost.style.top = (e.clientY + 12) + 'px';
+    var t = dropDeskAt(e.clientX, e.clientY);
+    if (pd.over && pd.over !== t) pd.over.classList.remove('drop');
+    pd.over = t && t !== pd.d ? t : null; if (pd.over) pd.over.classList.add('drop');
+  });
+  window.addEventListener('pointerup', function (e) {
+    if (!pd) return;
+    var p = pd; pd = null;
+    if (!p.moving) return;
+    justMovedP = true; setTimeout(function () { justMovedP = false; }, 300);
+    p.d.classList.remove('src'); wrap.classList.remove('pmoving'); if (pGhost) { pGhost.remove(); pGhost = null; }
+    if (p.over) p.over.classList.remove('drop');
+    var to = p.over; if (!to) return;
+    var from = p.d.dataset.s, other = rowOfDesk(to.dataset.s);
+    if (other && (other === p.r || deskOfRow(other) !== to.dataset.s)) other = null;
+    var stp = [['pseat', p.r.dataset.s, clone(store.pseat[p.r.dataset.s])]];
+    if (other) stp.push(['pseat', other.dataset.s, clone(store.pseat[other.dataset.s])]);
+    pushStep(stp);
+    writePseat(p.r.dataset.s, to.dataset.s);
+    if (other) writePseat(other.dataset.s, from);
+    relayout();
+  });
+  function deskClick(e) {
+    if (justMovedP) return;
+    var d = e.target.closest('.dk'); if (!d || d.classList.contains('empty')) return;
+    hi(d.dataset.s, false);
+    var r = rowOfDesk(d.dataset.s);
+    if (r) r.scrollIntoView({ block: 'nearest' });
+  }
+  document.getElementById('desks').addEventListener('click', deskClick);
+  var teamIds = [];
+  document.querySelectorAll('#teams .team').forEach(function (g) { teamIds.push(g.dataset.t); });
+  function setOpen(g, open) {
+    var b = g.querySelector('.fold'); b.setAttribute('aria-expanded', open ? 'true' : 'false');
+    g.querySelectorAll('tr.m').forEach(function (r) { r.hidden = !open; });
+  }
+  var store = { names: {}, teams: {}, moves: {}, need: {}, deleted: {}, gone: {}, added: {}, assign: {}, flags: {}, pseat: {} }, db = null, LS = (window.__edenLS || "edits:Seat Plan");
+  // Undo: every change pushes one step (a list of [collection, id, previous value]).
+  var hist = [], undoing = false, HK = LS + ':undo';
+  try { hist = JSON.parse(localStorage.getItem(HK) || '[]') || []; } catch (e) { hist = []; }
+  function keepHist() { try { localStorage.setItem(HK, JSON.stringify(hist)); } catch (e) {} var u = document.getElementById('undo'); if (u) u.disabled = !hist.length; }
+  // batch(): run several changes as one Undo step
+  function batch(fn) {
+    var step = [], orig = pushStep;
+    pushStep = function (st) { step = step.concat(st); };
+    try { fn(); } finally { pushStep = orig; }
+    if (step.length) pushStep(step);
+  }
+  function pushStep(step) { if (undoing || !step.length) return; hist.push(step); if (hist.length > 200) hist.shift(); keepHist(); }
+  function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
+  // Names always start with a capital letter.
+  function cap(v) { v = String(v); return v ? v.charAt(0).toLocaleUpperCase() + v.slice(1) : v; }
+  function paint() {
+    setTimeout(function () { paintTotal(); if (window.__relayout) window.__relayout(); }, 0);
+    paintFlags();
+    document.querySelectorAll('.ed').forEach(function (c) {
+      if (!c.querySelector('input')) { var v0 = store[c.dataset.k][c.dataset.id] || c.dataset.def || ''; c.textContent = c.dataset.k === 'need' ? v0 : cap(v0); }
+    });
+    paintDeskNames();
+    paintTeamNames();
+  }
+  // names on desks: the person who sits at each desk now (from the program rows), else a name typed for that seat
+  var DESKNAME = null;
+  function paintDeskNames() {
+    document.querySelectorAll('.dk').forEach(function (g) {
+      var nm = cap((DESKNAME && g.dataset.s in DESKNAME) ? DESKNAME[g.dataset.s] : (store.names[g.dataset.s] || '')), pn = g.querySelector('.pn'), dn = g.querySelector('.dn');
+      if (g.dataset.nm === nm) return;
+      g.dataset.nm = nm;
+      var x = +g.dataset.x, y = +g.dataset.y, w = +g.dataset.w, h = +g.dataset.h, cx = x + w / 2, cy = y + h / 2, vert = h > w;
+      pn.removeAttribute('transform');
+      if (!nm) { pn.textContent = ''; dn.setAttribute('y', cy.toFixed(1)); return; }
+      var max = vert ? h - 26 : w - 6;
+      if (vert) { dn.setAttribute('y', (y + 12).toFixed(1)); pn.setAttribute('x', cx.toFixed(1)); pn.setAttribute('y', (cy + 11).toFixed(1)); pn.setAttribute('transform', 'rotate(-90 ' + cx.toFixed(1) + ' ' + (cy + 11).toFixed(1) + ')'); }
+      else { dn.setAttribute('y', (cy - 9).toFixed(1)); pn.setAttribute('x', cx.toFixed(1)); pn.setAttribute('y', (cy + 9).toFixed(1)); }
+      pn.textContent = nm;
+      try {
+        var t = nm;
+        while (t.length > 1 && pn.getComputedTextLength() > max) { t = t.slice(0, -1); pn.textContent = t.replace(/ +$/, '') + '…'; }
+      } catch (e) {}
+      var ttl = g.querySelector('title') || g.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'title'));
+      ttl.textContent = 'Seat ' + g.dataset.s + ': ' + nm;
+    });
+  }
+  function paintTeamNames() {
+    document.querySelectorAll('#teams .team').forEach(function (g) {
+      var nm = cap(store.teams[g.dataset.t] || ''), tn = g.querySelector('.tname');
+      if (tn.textContent !== nm) tn.textContent = nm;
+      g.setAttribute('aria-label', 'Shade team T' + g.dataset.t + (nm ? ' ' + nm : ''));
+    });
+  }
+  function paintFlags() {
+    document.querySelectorAll('#srows tbody.grp').forEach(function (g) {
+      var f = store.flags[g.dataset.t] || '', tn = g.querySelector('.tn'); if (!tn) return;
+      if (f) { tn.dataset.flag = f; tn.title = 'Check: ' + f + ' (double-click to edit)'; } else { delete tn.dataset.flag; tn.title = 'Double-click to edit'; }
+    });
+  }
+  function paintTotal() {}
+  function showErr(m) { var e = document.getElementById('saveerr'); e.textContent = m || ''; e.hidden = !m; alignProgram(); }
+  try { var ls = JSON.parse(localStorage.getItem(LS) || 'null'); if (ls && ls.names && ls.teams) { store = ls; if (!store.moves) store.moves = {}; if (!store.need) store.need = {}; if (!store.deleted) store.deleted = {}; if (!store.gone) store.gone = {}; if (!store.added) store.added = {}; if (!store.assign) store.assign = {}; if (!store.flags) store.flags = {}; if (!store.pseat) store.pseat = {}; } } catch (e) {}
+  paint();
+  if (window.claude && window.claude.use) window.claude.use('db').then(function (d) {
+    if (!d) return;
+    db = d;
+    d.collection('moves').onSnapshot(function (snap) {
+      var m = {};
+      snap.docs.forEach(function (doc) { var b = doc.data(); if (b && isFinite(b.x) && isFinite(b.y)) m[doc.id] = { x: +b.x, y: +b.y }; });
+      if (dragT && store.moves[dragT]) m[dragT] = store.moves[dragT];
+      store.moves = m; relayout();
+    }, function () {});
+    ['names', 'teams', 'flags'].forEach(function (k) {
+      d.collection(k).onSnapshot(function (snap) {
+        var n = {};
+        snap.docs.forEach(function (doc) { var b = doc.data(); if (b && b.name) n[doc.id] = String(b.name); });
+        store[k] = n; paint();
+      }, function () { showErr('Saved names could not be loaded. Edits stay on this device only.'); db = null; });
+    });
+    d.collection('pseat').onSnapshot(function (snap) {
+      var n = {};
+      snap.docs.forEach(function (doc) { var b = doc.data(); if (b && b.s) n[doc.id] = String(b.s); });
+      store.pseat = n; relayout();
+    }, function () {});
+    d.collection('assign').onSnapshot(function (snap) {
+      var n = {};
+      snap.docs.forEach(function (doc) { var b = doc.data(); if (b && Array.isArray(b.s)) n[doc.id] = b.s.map(String); });
+      store.assign = n; relayout();
+    }, function () {});
+    d.collection('added').onSnapshot(function (snap) {
+      var n = {};
+      snap.docs.forEach(function (doc) { var b = doc.data(); if (b && isFinite(b.order)) n[doc.id] = { order: +b.order }; });
+      store.added = n; syncAdded(); paint(); relayout();
+    }, function () {});
+    d.collection('gone').onSnapshot(function (snap) {
+      var n = {};
+      snap.docs.forEach(function (doc) { var b = doc.data(); if (b && b.on) n[doc.id] = true; });
+      store.gone = n; relayout();
+    }, function () {});
+    d.collection('deleted').onSnapshot(function (snap) {
+      var n = {};
+      snap.docs.forEach(function (doc) { var b = doc.data(); if (b && b.on) n[doc.id] = true; });
+      store.deleted = n; relayout();
+    }, function () {});
+    d.collection('need').onSnapshot(function (snap) {
+      var n = {};
+      snap.docs.forEach(function (doc) { var b = doc.data(); if (b && isFinite(b.n)) n[doc.id] = String(Math.round(b.n)); });
+      store.need = n; paint();
+    }, function () {});
+  });
+  function save(k, id, val) {
+    val = val.trim();
+    if (k === 'names' || k === 'teams') val = cap(val);
+    if (k === 'need') {
+      if (val !== '' && !/^[0-9]{1,3}$/.test(val)) { showErr('Seats needed must be a whole number.'); return; }
+      if (val !== '') val = String(parseInt(val, 10));
+      var def = document.querySelector('.cnt[data-id="' + id + '"]').dataset.def;
+      if (val === def) val = '';
+      showErr('');
+    }
+    if ((store[k][id] || '') === val) return;
+    pushStep([[k, id, clone(store[k][id])]]);
+    if (val) store[k][id] = val; else delete store[k][id];
+    paint();
+    if (db) {
+      var ref = db.collection(k).doc(String(id));
+      (val ? ref.set(k === 'need' ? { n: +val } : { name: val }) : ref.delete()).then(function () { showErr(''); }, function () {
+        showErr('Not saved. You may not have edit access to this page.');
+      });
+    } else {
+      try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {}
+    }
+  }
+  document.getElementById('srows').addEventListener('dblclick', function (e) {
+    var c = e.target.closest('.ed'); if (!c || c.querySelector('input')) return;
+    var k = c.dataset.k, id = c.dataset.id;
+    var inp = document.createElement('input');
+    inp.type = 'text'; inp.id = 'ed-' + k + '-' + id; inp.value = store[k][id] || c.dataset.def || ''; if (k === 'need') inp.inputMode = 'numeric';
+    inp.setAttribute('aria-label', (k === 'teams' ? 'Name for team T' : k === 'need' ? 'Seats needed for team T' : 'Name for seat ') + id);
+    c.textContent = ''; c.appendChild(inp); inp.focus(); inp.select();
+    var done = false;
+    function finish(keep) { if (done) return; done = true; var v = inp.value; c.removeChild(inp); if (keep) { var was = store[k][id] || ''; save(k, id, v); if ((k === 'teams' || k === 'need') && store.flags[id] && (store[k][id] || '') !== was) save('flags', id, ''); } paint(); }
+    inp.addEventListener('keydown', function (ev) { ev.stopPropagation(); if (ev.key === 'Enter') finish(true); else if (ev.key === 'Escape') finish(false); });
+    inp.addEventListener('blur', function () { finish(true); });
+    inp.addEventListener('click', function (ev) { ev.stopPropagation(); });
+  });
+  var teamsG = document.getElementById('teams');
+  // Shading follows the desks a team holds now (its own, the ones Suggest gave it, or the ones a drag gave it).
+  var SHADED = {}, CUR = {};
+  function paintShade() {
+    var on = {};
+    Object.keys(SHADED).forEach(function (t) {
+      (CUR[t] || Array.prototype.map.call(document.querySelectorAll('#desks .dk[data-t="' + t + '"]'), function (d) { return d.dataset.s; })).forEach(function (s) { on[s] = true; });
+    });
+    document.querySelectorAll('.dk').forEach(function (d) { d.classList.toggle('th', !!on[d.dataset.s]); });
+  }
+  function shade(t, on) {
+    var g = teamsG.querySelector('.team[data-t="' + t + '"]');
+    if (g) g.setAttribute('aria-pressed', on ? 'true' : 'false');
+    if (on) SHADED[t] = true; else delete SHADED[t];
+    paintShade();
+    document.querySelectorAll('.lead[data-t="' + t + '"]').forEach(function (l) { l.classList.toggle('on', on); });
+    var grp = document.querySelector('tbody.grp[data-t="' + t + '"]');
+    if (grp) grp.classList.toggle('on', on);
+  }
+  function shadeTeam(g) {
+    var on = g.getAttribute('aria-pressed') !== 'true';
+    shade(g.dataset.t, on);
+  }
+  teamsG.addEventListener('click', function (e) {
+    var g = e.target.closest('.team'); if (!g) return;
+    if (justDragged) { justDragged = false; return; }
+    shadeTeam(g);
+  });
+  teamsG.addEventListener('keydown', function (e) {
+    var g = e.target.closest('.team');
+    if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); shadeTeam(g); }
+  });
+  // ---- Moving teams: drag a marker. Only the team (and its seats needed) moves; the desks stay.
+  // On drop the team takes the desks nearest the drop point. Desks another team already uses
+  // turn red (overlap); the team's old desks that nobody uses any more get a red outline (empty).
+  var dragT = null, justDragged = false;
+  function moveOf(t) { return store.moves[t] || null; }
+  function ctr(d) { return { x: +d.dataset.x + +d.dataset.w / 2, y: +d.dataset.y + +d.dataset.h / 2 }; }
+  function needOf(t, own) {
+    if (store.added[t]) return +(store.need[t] || 0);
+    var c = document.querySelector('.cnt[data-k="need"][data-id="' + t + '"]');
+    return +(store.need[t] || (c && c.dataset.def) || own.length);
+  }
+  // ---- Added teams: created with "+", listed at the bottom, marker parked under the plan until dragged in.
+  var baseIds = teamIds.slice(), SVGNS = 'http://www.w3.org/2000/svg';
+  var EXT = document.getElementById('plan').dataset.ext.split(' ').map(Number);
+  function addedIds() { return Object.keys(store.added).sort(function (a, b) { return store.added[a].order - store.added[b].order; }); }
+  function esc(v) { return String(v).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function personRow(pid, i) {
+    return '<tr data-s="' + esc(pid) + '" class="m" hidden><td class="num">' + i + '</td><td class="nm ed" data-k="names" data-id="' + esc(pid) + '" title="Double-click to edit"></td><td class="num">–</td><td class="del"><button type="button" class="delbtn" data-s="' + esc(pid) + '" aria-label="Delete this person">Delete</button></td></tr>';
+  }
+  function syncAdded() {
+    var ids = addedIds(), tbl = document.getElementById('srows'), tg = document.getElementById('teams');
+    document.querySelectorAll('tbody.grp[data-added]').forEach(function (b) { if (!store.added[b.dataset.t]) b.remove(); });
+    document.querySelectorAll('#teams .team[data-added], #teams .lead[data-added]').forEach(function (g) { if (!store.added[g.dataset.t]) g.remove(); });
+    ids.forEach(function (t, k) {
+      var grp = document.querySelector('tbody.grp[data-t="' + t + '"]');
+      if (!grp) {
+        grp = document.createElement('tbody');
+        grp.className = 'grp'; grp.dataset.t = t; grp.dataset.added = '1';
+        grp.innerHTML = '<tr class="gh"><td><button type="button" class="fold" aria-expanded="false"><span class="car" aria-hidden="true"></span>T</button></td><td class="tn ed" data-k="teams" data-id="' + esc(t) + '" title="Double-click to edit"></td><td class="num cnt ed" data-k="need" data-id="' + esc(t) + '" data-def="" title="Double-click to edit"></td><td class="del"><span class="acts"><button type="button" class="addbtn tip" data-tip="add team member" data-t="' + esc(t) + '" aria-label="Add a person to this team">+</button><button type="button" class="delbtn" data-t="' + esc(t) + '" aria-label="Delete this team">Delete</button></span></td></tr>';
+        tbl.appendChild(grp);
+      } else tbl.appendChild(grp);
+      // people rows: one per seat needed
+      var n = Math.max(0, Math.min(500, +(store.need[t] || 0)));
+      var rows = grp.querySelectorAll('tr.m'), open = grp.querySelector('.fold').getAttribute('aria-expanded') === 'true';
+      for (var i = rows.length; i < n; i++) { grp.insertAdjacentHTML('beforeend', personRow(t + '-' + (i + 1), i + 1)); grp.lastChild.hidden = !open; }
+      for (var j = rows.length - 1; j >= n; j--) rows[j].remove();
+      var g = document.querySelector('#teams .team[data-t="' + t + '"]');
+      if (!g) {
+        // park it in the bottom margin, 220 pt apart, skipping spots taken by other markers
+        var cy = EXT[3] + 70, cx = EXT[0] + 90, taken2 = [];
+        document.querySelectorAll('#teams .team').forEach(function (o) {
+          var r = o.querySelector('rect'); if (!r || o.style.display === 'none') return;
+          var ox = +r.getAttribute('x') + +r.getAttribute('width') / 2, oy = +r.getAttribute('y') + 32;
+          if (Math.abs(oy - cy) < 60) taken2.push(ox);
+        });
+        while (taken2.some(function (ox) { return Math.abs(ox - cx) < 340; })) cx += 340;
+        if (cx > EXT[2] + 150) { cx = EXT[0] - 100; cy = EXT[3] - 60 - k * 140; }
+        g = document.createElementNS(SVGNS, 'g');
+        g.setAttribute('class', 'team'); g.setAttribute('data-t', t); g.setAttribute('data-added', '1');
+        g.setAttribute('role', 'button'); g.setAttribute('tabindex', '0'); g.setAttribute('aria-pressed', 'false');
+        g.innerHTML = '<rect x="' + (cx - 60) + '" y="' + (cy - 32) + '" width="120" height="64" rx="32"></rect><text x="' + cx + '" y="' + cy + '">T</text><text class="tname" x="' + cx + '" y="' + (cy + 68) + '"></text><text class="short" x="' + cx + '" y="' + (cy + 122) + '"></text>';
+        var ln = document.createElementNS(SVGNS, 'line');
+        ln.setAttribute('class', 'lead'); ln.setAttribute('data-t', t); ln.setAttribute('data-added', '1');
+        ['x1', 'y1', 'x2', 'y2'].forEach(function (k) { ln.setAttribute(k, k[0] === 'x' ? cx : cy); });
+        tg.appendChild(ln);
+        tg.appendChild(g);
+        if (window.__scaleMarkers) window.__scaleMarkers();
+      }
+    });
+    // base teams: extra people rows when seats needed is more than the team's desks
+    baseIds.forEach(function (t) {
+      var grp = document.querySelector('tbody.grp[data-t="' + t + '"]'); if (!grp) return;
+      var deskRows = Array.prototype.slice.call(grp.querySelectorAll('tr.m:not([data-extra])')).filter(function (r) { return !store.gone[r.dataset.s]; });
+      var need = store.need[t] !== undefined && store.need[t] !== '' ? +store.need[t] : deskRows.length;
+      var want = Math.max(0, Math.min(500, need - deskRows.length));
+      var extra = grp.querySelectorAll('tr.m[data-extra]'), open = grp.querySelector('.fold').getAttribute('aria-expanded') === 'true';
+      for (var i = extra.length; i < want; i++) {
+        grp.insertAdjacentHTML('beforeend', personRow(t + '-x' + (i + 1), 0));
+        grp.lastChild.setAttribute('data-extra', '1'); grp.lastChild.hidden = !open;
+      }
+      for (var j = extra.length - 1; j >= want; j--) extra[j].remove();
+    });
+    teamIds.length = 0;
+    baseIds.concat(ids).forEach(function (t) { teamIds.push(t); });
+  }
+  var allDesks = Array.prototype.slice.call(document.querySelectorAll('#desks .dk'));
+  var deskBy = {}; allDesks.forEach(function (d) { deskBy[d.dataset.s] = d; });
+  // Benches = groups of desks that touch each other.
+  var BENCH = (function () {
+    var par = allDesks.map(function (_, i) { return i; });
+    function f(i) { while (par[i] !== i) i = par[i] = par[par[i]]; return i; }
+    var R = allDesks.map(function (d) { return { x: +d.dataset.x, y: +d.dataset.y, w: +d.dataset.w, h: +d.dataset.h }; });
+    for (var i = 0; i < R.length; i++) for (var j = 0; j < i; j++) {
+      var a = R[i], b = R[j], tol = 2.5;
+      if (a.x - tol < b.x + b.w && b.x - tol < a.x + a.w && a.y - tol < b.y + b.h && b.y - tol < a.y + a.h) par[f(i)] = f(j);
+    }
+    var map = {}, out = [];
+    allDesks.forEach(function (d, i) { var r = f(i); if (!(r in map)) { map[r] = out.length; out.push({ desks: [] }); } out[map[r]].desks.push(d); d.dataset.bench = map[r]; });
+    out.forEach(function (b) { var c = b.desks.map(ctr); b.x = c.reduce(function (s, p) { return s + p.x; }, 0) / c.length; b.y = c.reduce(function (s, p) { return s + p.y; }, 0) / c.length; });
+    return out;
+  })();
+  // Team markers always sit outside the floor plan (rule for drag and Suggest too): on the building side nearest
+  // the team's desks, with a dashed line to them. Teams deep inside the building get their marker in the core,
+  // 100 pt left of their desks.
+  function markerBase(g) {
+    var r = g.querySelector('rect');
+    if (!g.dataset.bx) { g.dataset.bx = +r.getAttribute('x') + +r.getAttribute('width') / 2; g.dataset.by = +r.getAttribute('y') + 32; }
+    return { x: +g.dataset.bx, y: +g.dataset.by };
+  }
+  function leadBase(l) {
+    if (l && !l.dataset.o) l.dataset.o = ['x1', 'y1', 'x2', 'y2'].map(function (k) { return l.getAttribute(k); }).join(' ');
+  }
+  function setLabels(g, north) {
+    var b = markerBase(g), tn = g.querySelector('.tname'), sh = g.querySelector('.short');
+    if (tn) tn.setAttribute('y', (north ? b.y - 68 : b.y + 68).toFixed(1));
+    if (sh) sh.setAttribute('y', (north ? b.y - 122 : b.y + 122).toFixed(1));
+  }
+  function resetMarker(g, lead) {
+    g.removeAttribute('transform');
+    if (g.dataset.side0) setLabels(g, g.dataset.side0 === 'N');
+    if (lead) { leadBase(lead); var o = lead.dataset.o.split(' '); ['x1', 'y1', 'x2', 'y2'].forEach(function (k, i) { lead.setAttribute(k, o[i]); }); lead.style.display = ''; }
+  }
+  function placeOutside(g, lead, desks) {
+    if (!desks.length) { resetMarker(g, lead); return; }
+    var b = markerBase(g);
+    if (!g.dataset.side0) { var tn0 = g.querySelector('.tname'); g.dataset.side0 = tn0 && +tn0.getAttribute('y') < b.y ? 'N' : 'S'; }
+    leadBase(lead);
+    var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    desks.forEach(function (d) { var x = +d.dataset.x, y = +d.dataset.y; x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + +d.dataset.w); y1 = Math.max(y1, y + +d.dataset.h); });
+    var cs = desks.map(ctr), cx = cs.reduce(function (s, q) { return s + q.x; }, 0) / cs.length, cy = cs.reduce(function (s, q) { return s + q.y; }, 0) / cs.length;
+    // side = building edge nearest the team's centre
+    var dN = cy - EXT[1], dS = EXT[3] - cy, dW = cx - EXT[0], dE = EXT[2] - cx, m = Math.min(dN, dS, dW, dE);
+    var tx, ty, L;
+    if (m > 400) { tx = x0 - 100; ty = cy; L = [tx + 47, ty, x0, ty]; }
+    else if (m === dN) { tx = cx; ty = EXT[1] - 60; L = [tx, ty + 32, tx, y0]; }
+    else if (m === dS) { tx = cx; ty = EXT[3] + 70; L = [tx, ty - 32, tx, y1]; }
+    else if (m === dW) { tx = EXT[0] - 100; ty = cy; L = [tx + 60, ty, x0, ty]; }
+    else { tx = EXT[2] + 100; ty = cy; L = [tx - 60, ty, x1, ty]; }
+    g.setAttribute('transform', 'translate(' + (tx - b.x).toFixed(1) + ' ' + (ty - b.y).toFixed(1) + ')');
+    setLabels(g, m <= 400 && m === dN);
+    PLACED.push({ g: g, lead: lead, side: m > 400 ? 'I' : m === dN ? 'N' : m === dS ? 'S' : m === dW ? 'W' : 'E', x: tx, y: ty, b: b, L: L });
+    if (lead) { ['x1', 'y1', 'x2', 'y2'].forEach(function (k, i) { lead.setAttribute(k, L[i].toFixed(1)); }); lead.style.display = ''; }
+  }
+  var PLACED = [];
+  // keep markers on the same side from overlapping: spread them along that side
+  function spreadMarkers() {
+    var sides = { N: [], S: [], W: [], E: [] };
+    PLACED.forEach(function (p) { if (sides[p.side]) sides[p.side].push(p); });
+    // markers still at their original spot are fixed obstacles
+    document.querySelectorAll('#teams .team').forEach(function (g) {
+      if (g.style.display === 'none' || g.getAttribute('transform')) return;
+      var b = markerBase(g), sd = b.x < EXT[0] ? 'W' : b.x > EXT[2] ? 'E' : b.y < EXT[1] ? 'N' : b.y > EXT[3] ? 'S' : null;
+      if (sd) sides[sd].push({ fixed: true, x: b.x, y: b.y });
+    });
+    Object.keys(sides).forEach(function (sd) {
+      var horiz = sd === 'N' || sd === 'S', gap = horiz ? 280 : 230, list = sides[sd];
+      var key = horiz ? 'x' : 'y';
+      list.sort(function (a, c) { return a[key] - c[key]; });
+      for (var i = 1; i < list.length; i++) {
+        var prev = list[i - 1], cur = list[i];
+        if (cur[key] - prev[key] >= gap) continue;
+        if (!cur.fixed) cur[key] = prev[key] + gap;
+        else if (!prev.fixed) prev[key] = cur[key] - gap;
+      }
+      list.forEach(function (p) {
+        if (p.fixed) return;
+        p.g.setAttribute('transform', 'translate(' + (p.x - p.b.x).toFixed(1) + ' ' + (p.y - p.b.y).toFixed(1) + ')');
+        if (p.lead) {
+          var L = p.L.slice();
+          if (horiz) { L[0] = p.x; L[2] = p.x; } else { L[1] = p.y; L[3] = p.y; }
+          ['x1', 'y1', 'x2', 'y2'].forEach(function (k, i) { p.lead.setAttribute(k, L[i].toFixed(1)); });
+        }
+      });
+    });
+    // interior markers (in the core): move down past any marker they would cover
+    var taken = [];
+    document.querySelectorAll('#teams .team').forEach(function (g) {
+      if (g.style.display === 'none' || g.getAttribute('transform')) return;
+      var b = markerBase(g); taken.push({ x: b.x, y: b.y });
+    });
+    PLACED.forEach(function (p) { if (p.side !== 'I') taken.push(p); });
+    PLACED.filter(function (p) { return p.side === 'I'; }).sort(function (a, c) { return a.y - c.y; }).forEach(function (p) {
+      var y0 = p.y, guard = 0;
+      while (guard++ < 30 && taken.some(function (o) { return Math.abs(o.x - p.x) < 280 && Math.abs(o.y - p.y) < 230; })) p.y += 230;
+      if (p.y !== y0) {
+        p.g.setAttribute('transform', 'translate(' + (p.x - p.b.x).toFixed(1) + ' ' + (p.y - p.b.y).toFixed(1) + ')');
+        if (p.lead) { p.lead.setAttribute('y1', p.y.toFixed(1)); }
+      }
+      taken.push(p);
+    });
+  }
+  function relayout() {
+    PLACED = [];
+    syncAdded();
+    var any = false, claim = {}, homeUsed = {}, deskName = {};
+    allDesks.forEach(function (d) { d.classList.remove('ov', 'empty', 'mv'); });
+    document.querySelectorAll('tr.m.unused, tr.m.pgone').forEach(function (r) { r.classList.remove('unused', 'pgone'); });
+    // Team numbers shown on screen skip deleted teams (T1, T2, … with no gaps).
+    var shownNo = 0, shortList = [], noOf = {};
+    teamIds.forEach(function (t) {
+      if (store.deleted[t]) return;
+      shownNo++; noOf[t] = shownNo;
+      var lab = 'T' + shownNo;
+      var mk = document.querySelector('#teams .team[data-t="' + t + '"] text:not(.tname):not(.short)');
+      if (mk && mk.textContent !== lab) mk.textContent = lab;
+      var fb = document.querySelector('tbody.grp[data-t="' + t + '"] .fold');
+      if (fb && fb.lastChild.nodeType === 3 && fb.lastChild.nodeValue !== lab) fb.lastChild.nodeValue = lab;
+    });
+    teamIds.forEach(function (t) {
+      var all = Array.prototype.slice.call(document.querySelectorAll('#desks .dk[data-t="' + t + '"]'));
+      var own = all.filter(function (d) { return !store.gone[d.dataset.s]; });
+      all.forEach(function (d) { if (store.gone[d.dataset.s]) homeUsed[d.dataset.s] = homeUsed[d.dataset.s] || false; });
+      var cnt = document.querySelector('.cnt[data-k="need"][data-id="' + t + '"]');
+      if (cnt && !store.added[t]) { cnt.dataset.def = own.length; if (!store.need[t] && !cnt.querySelector('input')) cnt.textContent = own.length; }
+      var need = needOf(t, own), mv = moveOf(t);
+      var g = document.querySelector('#teams .team[data-t="' + t + '"]'), lead = document.querySelector('#teams .lead[data-t="' + t + '"]');
+      var short = document.querySelector('#teams .team[data-t="' + t + '"] .short');
+      var rows = Array.prototype.slice.call(document.querySelectorAll('#srows tr.m[data-s]')).filter(function (r) { return r.parentNode.dataset.t === t; });
+      rows = rows.filter(function (r) { if (store.gone[r.dataset.s]) { r.classList.add('pgone'); return false; } return true; });
+      rows.forEach(function (r, i) { r.children[0].textContent = i + 1; });
+      var mine, gone = !!store.deleted[t], grp = document.querySelector('tbody.grp[data-t="' + t + '"]');
+      g.style.display = gone ? 'none' : ''; if (lead) lead.style.display = gone ? 'none' : '';
+      if (grp) grp.classList.toggle('gone', gone);
+      if (gone) {
+        CUR[t] = [];
+        if (short) short.textContent = '';
+        own.forEach(function (d) { homeUsed[d.dataset.s] = homeUsed[d.dataset.s] || false; });
+        return;
+      }
+      var asg = !mv && store.assign[t] ? store.assign[t] : null;
+      if (asg) {
+        mine = asg.map(function (id) { return deskBy[id]; }).filter(Boolean).slice(0, need);
+        var same = own.length && mine.length && mine.every(function (d) { return d.dataset.t === t; });
+        if (same) resetMarker(g, lead); else placeOutside(g, lead, mine);
+      } else if (mv) {
+        any = true;
+        mine = allDesks.slice().sort(function (a, b) {
+          var A = ctr(a), B = ctr(b);
+          return (Math.pow(A.x - mv.x, 2) + Math.pow(A.y - mv.y, 2)) - (Math.pow(B.x - mv.x, 2) + Math.pow(B.y - mv.y, 2));
+        }).slice(0, need);
+        if (dragT === t) {
+          // while dragging, the marker follows the pointer
+          var r0 = g.querySelector('rect'), hx = +r0.getAttribute('x') + +r0.getAttribute('width') / 2, hy = +r0.getAttribute('y') + 32;
+          g.setAttribute('transform', 'translate(' + (mv.x - hx).toFixed(1) + ' ' + (mv.y - hy).toFixed(1) + ')');
+          if (lead) lead.style.display = 'none';
+        } else placeOutside(g, lead, mine);
+      } else {
+        resetMarker(g, lead);
+        mine = own.slice(0, need);
+      }
+      // people dragged to a desk of their own (store.pseat) keep it; the others fill the team's desks in order
+      var ovSet = {};
+      rows.forEach(function (r, i) { var o = i < need && store.pseat[r.dataset.s]; if (o && deskBy[o]) ovSet[o] = 1; });
+      // everyone else keeps their own desk; only a person whose desk was taken by a mover gets a freed desk
+      var held = [], waiting = [], usedD = {};
+      rows.forEach(function (r, i) {
+        r._desk = null; if (i >= need) return;
+        var o = store.pseat[r.dataset.s];
+        if (o && deskBy[o]) { r._desk = deskBy[o]; usedD[o] = 1; return; }
+        var d = mine[i];
+        if (d && !ovSet[d.dataset.s]) { r._desk = d; usedD[d.dataset.s] = 1; } else waiting.push(r);
+      });
+      var spare = mine.filter(function (d) { return !usedD[d.dataset.s]; });
+      waiting.forEach(function (r) { var d = spare.shift(); if (d) { r._desk = d; usedD[d.dataset.s] = 1; } });
+      rows.forEach(function (r, i) { if (i < need && r._desk) held.push(r._desk); });
+      if (rows.length < need) mine.slice(rows.length, need).forEach(function (d) { if (!usedD[d.dataset.s]) held.push(d); });
+      mine.forEach(function (d) { if (held.indexOf(d) < 0 && d.dataset.t === t) homeUsed[d.dataset.s] = homeUsed[d.dataset.s] || false; });
+      held.forEach(function (d) { if (mine.indexOf(d) < 0 && d.dataset.t !== t) d.classList.add('mv'); });
+      mine = held;
+      CUR[t] = mine.map(function (d) { return d.dataset.s; });
+      if (short) short.textContent = need > mine.length ? (need - mine.length) + ' seats short' : '';
+      if (need > mine.length) shortList.push('T' + noOf[t] + ' (' + (need - mine.length) + ')');
+      mine.forEach(function (d) { (claim[d.dataset.s] = claim[d.dataset.s] || []).push(t); });
+      // table: show as many people rows as seats needed; the Seat column shows the desk each one now has
+      rows.forEach(function (r, i) {
+        if (i >= need) { r.classList.add('unused'); return; }
+        var seatCell = r.children[2], d = r._desk;
+        seatCell.textContent = d ? d.dataset.s : '–';
+        if (d && !(d.dataset.s in deskName)) deskName[d.dataset.s] = store.names[r.dataset.s] || '';
+      });
+      if (mv || asg) own.forEach(function (d) { homeUsed[d.dataset.s] = homeUsed[d.dataset.s] || false; });
+      else own.forEach(function (d, i) { if (i >= need) homeUsed[d.dataset.s] = homeUsed[d.dataset.s] || false; });
+      if (mv) mine.forEach(function (d) { if (d.dataset.t !== t) d.classList.add('mv'); });
+    });
+    allDesks.forEach(function (d) {
+      var c = claim[d.dataset.s];
+      if (c && c.length > 1) { d.classList.remove('mv'); d.classList.add('ov'); }
+      else if (!c && d.dataset.s in homeUsed) d.classList.add('empty');
+    });
+    spreadMarkers();
+    paintShade();
+    DESKNAME = deskName; paintDeskNames();
+    allDesks.forEach(function (d) { d.classList.toggle('hasp', d.dataset.s in deskName); });
+    var sm = document.getElementById('shortmsg');
+    sm.textContent = shortList.length ? 'Seats short: ' + shortList.join(', ') + '.' : '';
+    sm.hidden = !shortList.length;
+    alignProgram();
+    var used = Object.keys(claim).length;
+    document.getElementById('totused').textContent = used;
+    document.getElementById('totfree').textContent = allDesks.length - used;
+    alignProgram();
+  }
+  window.__relayout = relayout;
+  function svgPt(e) {
+    var p = plan.createSVGPoint(); p.x = e.clientX; p.y = e.clientY;
+    return p.matrixTransform(plan.getScreenCTM().inverse());
+  }
+  function saveMove(t) {
+    var mv = moveOf(t);
+    relayout();
+    if (db) {
+      var ref = db.collection('moves').doc(String(t));
+      (mv ? ref.set({ x: Math.round(mv.x * 10) / 10, y: Math.round(mv.y * 10) / 10 }) : ref.delete()).then(function () { showErr(''); }, function () {
+        showErr('Move not saved. You may not have edit access to this page.');
+      });
+    } else {
+      try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {}
+    }
+  }
+  var ds = null;
+  teamsG.addEventListener('pointerdown', function (e) {
+    var g = e.target.closest('.team'); if (!g || e.button > 0) return;
+    ds = { g: g, t: g.dataset.t, sx: e.clientX, sy: e.clientY, prev: moveOf(g.dataset.t), moving: false };
+    try { g.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  teamsG.addEventListener('pointermove', function (e) {
+    if (!ds) return;
+    if (!ds.moving) {
+      if (Math.abs(e.clientX - ds.sx) + Math.abs(e.clientY - ds.sy) < 6) return;
+      ds.moving = true; dragT = ds.t; ds.g.classList.add('drag');
+    }
+    e.preventDefault();
+    var p = svgPt(e);
+    store.moves[ds.t] = { x: p.x, y: p.y };
+    if (store.assign[ds.t]) { ds.prevAsg = store.assign[ds.t]; delete store.assign[ds.t]; }
+    relayout();
+  });
+  function endDrag(e) {
+    if (!ds) return;
+    var d = ds; ds = null;
+    try { d.g.releasePointerCapture(e.pointerId); } catch (err) {}
+    if (!d.moving) return;
+    justDragged = true; setTimeout(function () { justDragged = false; }, 300);
+    d.g.classList.remove('drag');
+    dragT = null;
+    var stp = [['moves', d.t, clone(d.prev)]];
+    if (d.prevAsg) { stp.push(['assign', d.t, clone(d.prevAsg)]); writeAssign(d.t, null); }
+    // moving a team takes its people along: their personal desks are cleared
+    document.querySelectorAll('#srows tbody.grp[data-t="' + d.t + '"] tr.m').forEach(function (r) { if (store.pseat[r.dataset.s]) { stp.push(['pseat', r.dataset.s, store.pseat[r.dataset.s]]); writePseat(r.dataset.s, null); } });
+    pushStep(stp);
+    saveMove(d.t);
+  }
+  teamsG.addEventListener('pointerup', endDrag);
+  teamsG.addEventListener('pointercancel', endDrag);
+  relayout();
+  function saveGone(seat, on) {
+    pushStep([['gone', seat, clone(store.gone[seat])]]);
+    if (on) store.gone[seat] = true; else delete store.gone[seat];
+    relayout();
+    if (db) {
+      var ref = db.collection('gone').doc(String(seat));
+      (on ? ref.set({ on: true }) : ref.delete()).then(function () { showErr(''); }, function () {
+        showErr('Not saved. You may not have edit access to this page.');
+      });
+    } else {
+      try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {}
+    }
+  }
+  function saveDeleted(t, on) {
+    pushStep([['deleted', t, clone(store.deleted[t])]]);
+    if (on) store.deleted[t] = true; else delete store.deleted[t];
+    relayout();
+    if (db) {
+      var ref = db.collection('deleted').doc(String(t));
+      (on ? ref.set({ on: true }) : ref.delete()).then(function () { showErr(''); }, function () {
+        showErr('Not saved. You may not have edit access to this page.');
+      });
+    } else {
+      try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {}
+    }
+  }
+  function closeConfirm() { document.querySelectorAll('.confirm').forEach(function (c) { c.remove(); }); }
+  document.addEventListener('click', function (e) { if (!e.target.closest('.confirm, .delbtn')) closeConfirm(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeConfirm(); });
+  // a person moved by drag sits at their own desk: collection pseat, doc = person row id, field s = desk number
+  function writePseat(id, val) {
+    if (val) store.pseat[id] = String(val); else delete store.pseat[id];
+    if (db) {
+      var ref = db.collection('pseat').doc(String(id));
+      (val ? ref.set({ s: String(val) }) : ref.delete()).then(function () {}, function () { showErr('Not saved. You may not have edit access to this page.'); });
+    } else { try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {} }
+  }
+  function writeAssign(t, val) {
+    if (val) store.assign[t] = val; else delete store.assign[t];
+    if (db) {
+      var ref = db.collection('assign').doc(String(t));
+      (val ? ref.set({ s: val }) : ref.delete()).then(function () {}, function () { showErr('Not saved. You may not have edit access to this page.'); });
+    } else { try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {} }
+  }
+  function writeMove(t, val) {
+    if (val) store.moves[t] = val; else delete store.moves[t];
+    if (db) {
+      var ref = db.collection('moves').doc(String(t));
+      (val ? ref.set({ x: val.x, y: val.y }) : ref.delete()).then(function () {}, function () { showErr('Not saved. You may not have edit access to this page.'); });
+    } else { try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {} }
+  }
+  // ---- Suggest: seat every team following the rules.
+  // Rule 1 (no overlaps): teams that were dragged keep the desks nearest their drop point; any team pushed off
+  // its desks moves to the nearest free benches, and so on, until no desk has two teams.
+  // Rule 2 (no mixing): a bench belongs to one team only; a team's leftover desks on its bench stay empty.
+  function suggest() {
+    var taken = {}, res = {}, short = [];
+    function dist(a, b) { return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2)); }
+    function current(t) {
+      if (store.assign[t]) return store.assign[t].map(function (id) { return deskBy[id]; }).filter(Boolean);
+      return Array.prototype.slice.call(document.querySelectorAll('#desks .dk[data-t="' + t + '"]')).filter(function (d) { return !store.gone[d.dataset.s]; });
+    }
+    function needFor(t) {
+      var c = document.querySelector('.cnt[data-k="need"][data-id="' + t + '"]');
+      return +((c && c.textContent) || 0);
+    }
+    function homeOf(t) {
+      if (store.moves[t]) return store.moves[t];
+      var cur = current(t);
+      if (cur.length) { var c = cur.map(ctr); return { x: c.reduce(function (s, p) { return s + p.x; }, 0) / c.length, y: c.reduce(function (s, p) { return s + p.y; }, 0) / c.length }; }
+      var r = document.querySelector('#teams .team[data-t="' + t + '"] rect'); return { x: +r.getAttribute('x') + +r.getAttribute('width') / 2, y: +r.getAttribute('y') + 32 };
+    }
+    function fill(t, n, keep) {
+      var h = homeOf(t), got = keep.slice(), cap = got.reduce(function (s, i) { return s + BENCH[i].desks.length; }, 0);
+      // pick free benches one at a time
+      while (cap < n) {
+        var left = n - cap, best = -1, bs = Infinity;
+        BENCH.forEach(function (b, i) {
+          if (i in taken) return;
+          // nearest first; penalties for desks left empty and for splitting the team over several benches
+          var sc = dist(h, b) + 60 * Math.max(0, b.desks.length - left) + (b.desks.length < left ? 500 : 0);
+          if (sc < bs) { bs = sc; best = i; }
+        });
+        if (best < 0) break;
+        taken[best] = t; got.push(best); cap += BENCH[best].desks.length;
+      }
+      var desks = [];
+      got.forEach(function (i) { desks = desks.concat(BENCH[i].desks); });
+      desks.sort(function (a, b) { return dist(h, ctr(a)) - dist(h, ctr(b)); });
+      res[t] = desks.slice(0, n);
+      if (res[t].length < n) short.push(t);
+    }
+    var live = teamIds.filter(function (t) { return !store.deleted[t]; });
+    var moved = live.filter(function (t) { return store.moves[t]; }), rest = live.filter(function (t) { return !store.moves[t]; });
+    moved.forEach(function (t) { fill(t, needFor(t), []); });
+    var pending = [];
+    rest.forEach(function (t) {
+      var n = needFor(t), h = homeOf(t), keep = [], cap = 0;
+      var mineB = [];
+      current(t).forEach(function (d) { var b = +d.dataset.bench; if (mineB.indexOf(b) < 0) mineB.push(b); });
+      mineB.sort(function (a, b) { return dist(h, BENCH[a]) - dist(h, BENCH[b]); });
+      mineB.forEach(function (b) { if (cap < n && !(b in taken)) { taken[b] = t; keep.push(b); cap += BENCH[b].desks.length; } });
+      if (cap >= n) { fill(t, n, keep); } else pending.push({ t: t, n: n, keep: keep });
+    });
+    pending.sort(function (a, b) { return b.n - a.n; }).forEach(function (p) { fill(p.t, p.n, p.keep); });
+    // Rule 3 (seat as many as possible): bigger teams come first. If a team is short, take out the smallest
+    // seated team that is smaller than it, re-seat the short team, then try to fit the small team elsewhere.
+    // A small team that no longer fits is left out completely and shown as short by its whole size.
+    var needs = {}; live.forEach(function (t) { needs[t] = needFor(t); });
+    function release(t) { Object.keys(taken).forEach(function (b) { if (taken[b] === t) delete taken[b]; }); res[t] = []; }
+    function benchesOf(t) { return Object.keys(taken).filter(function (b) { return taken[b] === t; }).map(Number); }
+    function isShort(t) { return (res[t] || []).length < needs[t]; }
+    function seatedCount() { return live.reduce(function (s, t) { return s + Math.min((res[t] || []).length, needs[t]); }, 0); }
+    var out = {}, guard = 0;
+    while (guard++ < 60) {
+      var sh = live.filter(function (t) { return needs[t] > 0 && isShort(t) && !out[t]; }).sort(function (a, b) { return needs[b] - needs[a]; });
+      if (!sh.length) break;
+      var S = sh[0];
+      var victims = live.filter(function (t) { return t !== S && !out[t] && (res[t] || []).length && needs[t] < needs[S]; })
+        .sort(function (a, b) { return needs[a] - needs[b]; });
+      if (!victims.length) { out[S] = 'partial'; continue; }
+      // try each smaller team (smallest first); keep the change only if more people end up seated
+      var done = false;
+      for (var vi = 0; vi < victims.length && !done; vi++) {
+        var E = victims[vi];
+        var snapT = JSON.parse(JSON.stringify(taken)), snapR = {};
+        Object.keys(res).forEach(function (t) { snapR[t] = res[t].slice(); });
+        var before = seatedCount();
+        release(E);
+        var keepS = benchesOf(S); release(S); keepS.forEach(function (b) { taken[b] = S; });
+        fill(S, needs[S], keepS);
+        fill(E, needs[E], []);
+        if (isShort(E)) release(E);
+        if (seatedCount() > before) { if (!(res[E] || []).length) out[E] = 'all'; done = true; }
+        else { taken = snapT; res = snapR; }
+      }
+      if (!done) out[S] = 'partial';
+    }
+    short = live.filter(function (t) { return needs[t] > 0 && isShort(t); });
+    // save: one undo step for the whole suggestion
+    var step = [];
+    live.forEach(function (t) { step.push(['assign', t, clone(store.assign[t])]); if (store.moves[t]) step.push(['moves', t, clone(store.moves[t])]); });
+    var pIds = Object.keys(store.pseat); pIds.forEach(function (id) { step.push(['pseat', id, store.pseat[id]]); });
+    pushStep(step);
+    pIds.forEach(function (id) { writePseat(id, null); });   // Suggest re-seats everyone: personal moves are cleared
+    live.forEach(function (t) {
+      var ids = (res[t] || []).map(function (d) { return d.dataset.s; });
+      var own = Array.prototype.slice.call(document.querySelectorAll('#desks .dk[data-t="' + t + '"]')).filter(function (d) { return !store.gone[d.dataset.s]; }).map(function (d) { return d.dataset.s; });
+      var sameAsOwn = ids.length && ids.length <= own.length && ids.every(function (id) { return own.indexOf(id) >= 0; }) && own.slice(0, ids.length).every(function (id) { return ids.indexOf(id) >= 0; });
+      if (store.moves[t]) writeMove(t, null);
+      writeAssign(t, sameAsOwn ? null : ids);
+    });
+    relayout();
+    showErr('');
+  }
+  document.getElementById('suggest').addEventListener('click', suggest);
+  // ---- Export: the layout as a PNG picture, the program as an Excel file (through the downloads capability).
+  // Export: the Export next to Upload layout saves the layout picture; the one next to Upload program saves the Excel.
+  function closeExp() {}
+  function fileBase() { return (titleVal || ltitle.dataset.def).replace(/^Layout\s*·\s*/, '').replace(/[\/:*?"<>|]+/g, '').trim() || 'Seat plan'; }
+  function offerFile(name, blob) {
+    var use = window.claude && window.claude.use ? window.claude.use('downloads') : Promise.resolve(null);
+    return use.then(function (dl) {
+      if (!dl) { layNote('Saving files is not available in this view.'); return; }
+      return dl.save({ filename: name, data: blob }).then(function () { layNote(''); }, function (e) {
+        if (e && e.code === 'declined') return;
+        layNote(e && e.code === 'rate_limited' ? 'A save is already open. Finish it, then try again.' : 'Could not save the file.');
+      });
+    });
+  }
+  var STYLE_PROPS = ['fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linejoin', 'opacity', 'display', 'visibility', 'font-family', 'font-size', 'font-weight', 'letter-spacing', 'text-anchor', 'dominant-baseline', 'paint-order', 'filter'];
+  document.getElementById('exp-png').addEventListener('click', function () {
+    closeExp();
+    var svg = document.getElementById('plan'), clone = svg.cloneNode(true);
+    var src = svg.querySelectorAll('*'), dst = clone.querySelectorAll('*');
+    for (var i = 0; i < src.length; i++) {
+      var cs = getComputedStyle(src[i]), st = '';
+      STYLE_PROPS.forEach(function (k) { var v = cs.getPropertyValue(k); if (v) st += k + ':' + v + ';'; });
+      dst[i].setAttribute('style', st);
+    }
+    var vb = svg.viewBox.baseVal, scale = 2, W = Math.round(vb.width * scale), H = Math.round(vb.height * scale);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); clone.setAttribute('width', W); clone.setAttribute('height', H);
+    clone.removeAttribute('style');
+    var url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml' }));
+    var img = new Image();
+    img.onload = function () {
+      var c = document.createElement('canvas'); c.width = W; c.height = H;
+      var ctx = c.getContext('2d'); ctx.fillStyle = getComputedStyle(document.body).backgroundColor || '#ffffff'; ctx.fillRect(0, 0, W, H);
+      ctx.drawImage(img, 0, 0, W, H); URL.revokeObjectURL(url);
+      c.toBlob(function (b) { if (b) offerFile(fileBase() + ' - layout.jpg', b); else layNote('Could not make the picture.'); }, 'image/jpeg', 0.92);
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); layNote('Could not make the picture.'); };
+    img.src = url;
+  });
+  document.getElementById('exp-xlsx').addEventListener('click', function () {
+    closeExp();
+    var rows = [['Team', 'Team name', 'Seats needed', '#', 'Name', 'Seat']];
+    document.querySelectorAll('#srows tbody.grp').forEach(function (g) {
+      if (g.classList.contains('gone')) return;
+      rows.push([g.querySelector('.fold').textContent.trim(), g.querySelector('.tn').textContent.trim(), +(g.querySelector('.cnt').textContent || 0), '', '', '']);
+      g.querySelectorAll('tr.m').forEach(function (r) {
+        if (r.classList.contains('unused') || r.classList.contains('pgone')) return;
+        var seat = r.children[2].textContent.trim();
+        rows.push(['', '', '', +r.children[0].textContent, r.children[1].textContent.trim(), /^[0-9]+$/.test(seat) ? +seat : seat]);
+      });
+    });
+    loadXLSX().then(function (X) {
+      var ws = X.utils.aoa_to_sheet(rows), wb = X.utils.book_new();
+      ws['!cols'] = [{ wch: 8 }, { wch: 24 }, { wch: 13 }, { wch: 5 }, { wch: 28 }, { wch: 7 }];
+      X.utils.book_append_sheet(wb, ws, 'Program');
+      var out = X.write(wb, { bookType: 'xlsx', type: 'array' });
+      offerFile(fileBase() + ' - program.xlsx', new Blob([out]));
+    }, function () { layNote('Could not make the Excel file.'); });
+  });
+  // ---- Layout title: double-click to rename (saved in db collection "meta", doc "title").
+  var ltitle = document.getElementById('ltitle'), titleVal = null;
+  function paintTitle() { if (!ltitle.querySelector('input')) ltitle.textContent = titleVal || ltitle.dataset.def; }
+  try { titleVal = JSON.parse(localStorage.getItem(LS + ':title') || 'null'); } catch (e) {}
+  paintTitle();
+  function saveTitle(v, rec) {
+    v = (v || '').trim();
+    if (v === ltitle.dataset.def) v = '';
+    if ((titleVal || '') === v) return;
+    if (rec !== false) pushStep([['title', 'title', titleVal || '']]);
+    titleVal = v || null; paintTitle();
+    if (db) {
+      var ref = db.collection('meta').doc('title');
+      (v ? ref.set({ name: v }) : ref.delete()).then(function () {}, function () { showErr('Not saved. You may not have edit access to this page.'); });
+    } else { try { localStorage.setItem(LS + ':title', JSON.stringify(titleVal)); } catch (e) {} }
+  }
+  window.__saveTitle = saveTitle;
+  ltitle.addEventListener('dblclick', function () {
+    if (ltitle.querySelector('input')) return;
+    var inp = document.createElement('input'); inp.type = 'text'; inp.id = 'ed-title'; inp.value = titleVal || ltitle.dataset.def;
+    inp.setAttribute('aria-label', 'Layout title');
+    ltitle.textContent = ''; ltitle.appendChild(inp); inp.focus(); inp.select();
+    var done = false;
+    function fin(keep) { if (done) return; done = true; var v = inp.value; ltitle.removeChild(inp); if (keep) saveTitle(v); paintTitle(); }
+    inp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') fin(true); else if (ev.key === 'Escape') fin(false); });
+    inp.addEventListener('blur', function () { fin(true); });
+  });
+  if (window.claude && window.claude.use) window.claude.use('db').then(function (d) {
+    if (!d) return;
+    d.collection('meta').onSnapshot(function (snap) {
+      var v = null; snap.docs.forEach(function (doc) { var b = doc.data(); if (doc.id === 'title' && b && b.name) v = String(b.name); });
+      titleVal = v; paintTitle();
+    }, function () {});
+  });
+  // ---- Upload layout: stores the new plan file with the page; Claude then reads it and rebuilds the layout.
+  var layfile = document.getElementById('layfile'), laymsg = document.getElementById('laymsg');
+  function layNote(text, ok) { laymsg.textContent = text; laymsg.hidden = !text; laymsg.classList.toggle('ok', !!ok); }
+  document.getElementById('uplayout').addEventListener('click', function () { layfile.value = ''; layfile.click(); });
+  layfile.addEventListener('change', function () {
+    var f = layfile.files && layfile.files[0]; if (!f) return;
+    var type = /[.]pdf$/i.test(f.name) ? 'application/pdf' : /[.]png$/i.test(f.name) ? 'image/png' : 'image/jpeg';
+    var getAssets = window.claude && window.claude.use ? window.claude.use('assets') : Promise.resolve(null);
+    layNote('Uploading ' + f.name + '…', true);
+    getAssets.then(function (a) {
+      if (!a) { layNote('Uploading a layout needs edit access to this page.'); return; }
+      return a.upload(f, { type: type }).then(function (r) {
+        var isPdf = type === 'application/pdf', recId = 'a' + Date.now().toString(36);
+        var rec = { asset: r.id, name: f.name, size: r.sizeBytes, at: new Date().toISOString(), status: isPdf ? 'analyzing' : 'waiting for Claude' };
+        var go = function () {
+          if (isPdf) window.__autoLayout(f, db, recId);
+          else layNote('Layout received: ' + f.name + '. A picture cannot be read automatically: upload the plan as a PDF.', true);
+        };
+        if (db) db.collection('layouts').doc(recId).set(rec).then(go, go);
+        else go();
+      });
+    }).catch(function (e) {
+      var c = e && e.code;
+      layNote(c === 'too_large' ? 'That file is too large (20 MB max).' : c === 'not_granted' ? 'Uploading a layout needs edit access to this page.' : 'Could not upload the layout. Try again.');
+    });
+  });
+  // ---- Delete program: removes every team (one Undo step).
+  document.getElementById('delprog').addEventListener('click', function (e) {
+    e.stopPropagation();
+    var wrap = this.parentNode, open = wrap.querySelector('.confirm');
+    closeConfirm(); if (open) return;
+    var c = document.createElement('button');
+    c.type = 'button'; c.className = 'confirm'; c.textContent = 'Are you sure?'; c.setAttribute('aria-label', 'Yes, delete the whole program');
+    c.addEventListener('click', function (ev) {
+      ev.stopPropagation(); closeConfirm();
+      batch(function () { teamIds.slice().forEach(function (t) { if (!store.deleted[t]) { shade(t, false); saveDeleted(t, true); } }); });
+    });
+    wrap.appendChild(c); c.focus();
+  });
+  // ---- Upload a table (Excel or CSV): adds its teams and people to the program, then runs Suggest.
+  var upfile = document.getElementById('upfile');
+  document.getElementById('upload').addEventListener('click', function () { upfile.value = ''; upfile.click(); });
+  function parseCSV(text) {
+    var first = text.split(/\r?\n/)[0] || '', sep = [',', ';', '\t'].sort(function (a, b) { return first.split(b).length - first.split(a).length; })[0];
+    var rows = [], row = [], cur = '', q = false;
+    for (var i = 0; i < text.length; i++) {
+      var ch = text[i];
+      if (q) { if (ch === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; continue; }
+      if (ch === '"') q = true;
+      else if (ch === sep) { row.push(cur); cur = ''; }
+      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; }
+      else cur += ch;
+    }
+    if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+    return rows;
+  }
+  function loadXLSX() {
+    return new Promise(function (ok, bad) {
+      if (window.XLSX) return ok(window.XLSX);
+      var sc = document.createElement('script');
+      sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      sc.onload = function () { ok(window.XLSX); }; sc.onerror = function () { bad(new Error('load')); };
+      document.head.appendChild(sc);
+    });
+  }
+  // ---- Reading a program table: columns are recognised by header words (any language, typos allowed) and by
+  // their content: a column of whole numbers is the seats count, text columns are team name and person name.
+  function isNum(v) { return /^ *[0-9]+([.]0+)? *$/.test(String(v)); }
+  function kindOf(h) {
+    h = String(h).trim().toLowerCase();
+    if (!h) return null;
+    if (/seat|count|headcount|size|capacity|member|people|employees|desks|places|מקומ|עמד|כמות|מספר עובדים|מס.? עובדים|תקן/.test(h)) return 'seats';
+    if (/^(team *(#|no[.]?|num(ber)?|id)|#|מספר צוות|מס.? צוות)$/.test(h)) return 'team';
+    if (/team|dep|group|unit|division|צוות|מחלק|יחיד|קבוצ|חטיב|אגף/.test(h)) return 'tname';
+    if (/name|employee|person|worker|שם|עובד/.test(h)) return 'person';
+    return null;
+  }
+  function mapColumns(rows) {
+    var w = Math.max.apply(null, rows.map(function (r) { return r.length; })), first = rows[0], body = rows.slice(1);
+    var numeric = [], text = [];
+    for (var i = 0; i < w; i++) {
+      var vals = body.map(function (r) { return r[i]; }).filter(function (v) { return v !== undefined && String(v).trim() !== ''; });
+      var nn = vals.filter(isNum).length;
+      numeric[i] = vals.length > 0 && nn >= 0.8 * vals.length; text[i] = vals.length > 0 && nn < 0.5 * vals.length;
+    }
+    var m = {}, hits = 0;
+    first.forEach(function (c, i) {
+      var k = kindOf(c); if (!k) return;
+      if (k === 'person' && numeric[i]) k = 'seats';
+      if (k === 'seats' && !numeric[i]) return;
+      if (m[k] === undefined) { m[k] = i; hits++; }
+    });
+    var header = hits > 0 || first.some(function (c, i) { return numeric[i] && String(c).trim() !== '' && !isNum(c); });
+    // fill what the headers did not name, from the column contents
+    for (var j = 0; j < w; j++) {
+      if (Object.keys(m).some(function (k) { return m[k] === j; })) continue;
+      if (numeric[j] && m.seats === undefined && m.team !== j) m.seats = j;
+      else if (text[j] && m.tname === undefined && m.team === undefined) m.tname = j;
+      else if (text[j] && m.person === undefined) m.person = j;
+    }
+    if (!header && m.tname === undefined && m.team === undefined) return null;
+    return { m: m, header: header };
+  }
+  var SKIP = /^(total|sum|סה.?כ|סך הכל|סיכום|הערה)/i;
+
+  // ---- Upload program: Claude reads the whole file (every sheet, messy tables, notes, totals) and returns the teams.
+  // They are added at once and Suggest runs; a team Claude was unsure about shows a ⚠ note. Without Claude, the
+  // column reader (mapColumns) is used instead.
+  function readSheets(file) {
+    var isX = /[.]xls[xm]?$/i.test(file.name);
+    return new Promise(function (ok, bad) {
+      var fr = new FileReader();
+      fr.onerror = function () { bad(new Error('read')); };
+      fr.onload = function () {
+        if (!isX) return ok([{ name: file.name, rows: parseCSV(String(fr.result)) }]);
+        loadXLSX().then(function (X) {
+          var wb = X.read(new Uint8Array(fr.result), { type: 'array' });
+          ok(wb.SheetNames.map(function (n) { return { name: n, rows: X.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: '' }) }; }));
+        }, bad);
+      };
+      if (isX) fr.readAsArrayBuffer(file); else fr.readAsText(file);
+    });
+  }
+  function filled(rows) { return rows.filter(function (r) { return r.some(function (c) { return String(c).trim() !== ''; }); }); }
+  function sheetText(sheets) {
+    var out = [], size = 0;
+    sheets.forEach(function (sh) {
+      var rows = filled(sh.rows); if (!rows.length) return;
+      out.push('### Sheet: ' + sh.name);
+      rows.forEach(function (r, i) {
+        if (size > 170000) return;
+        var line = 'r' + (i + 1) + ': ' + r.map(function (c) { return String(c).replace(/\s+/g, ' ').trim().slice(0, 80); }).join(' | ');
+        size += line.length * 2; out.push(line);
+      });
+    });
+    return out.join('\n');
+  }
+  function aiPrompt(name, text) {
+    return [
+      'You read an office "program": a table a client sent saying which teams need desks on a floor. It is often messy: titles, notes, totals, subtotals, several sheets, merged headers, floors, extra columns (phones, emails, ids), Hebrew or English, typos.',
+      'Return ONLY JSON: {"teams":[{"name":"...","seats":28,"people":["..."],"flag":null}],"ignored":[{"rows":3,"why":"totals"}]}',
+      'Rules:',
+      '1. A team is a department, unit, group, company or project that needs workstations. Keep its name exactly as written (never translate).',
+      '2. seats = workstations it needs: an explicit seat / desk / headcount / members number. If open-space desks and rooms (offices, manager rooms) are counted separately, add them: each room is 1 seat unless a number is given. If only people are listed, the number of people. If both, the larger.',
+      '3. people = person names listed for the team (an empty list if none). Never put numbers, roles or emails in people.',
+      '4. Ignore titles, notes, empty rows, repeated headers, totals and subtotals (total, sum, סה"כ, סיכום), and summary tables that repeat teams already counted. Count what you ignored in "ignored" with a short reason.',
+      '5. The same team in several rows (split by floor or sub-unit) is one team with the seats added up, unless the rows list its people.',
+      '6. If several sheets hold the same data, use the most detailed one, once.',
+      '7. flag: null, or a short English note (max 8 words) when something is unsure, e.g. "no seat count", "seats guessed from people", "possible duplicate of X", "mixed totals". Use seats 0 when there is no number and no people.',
+      '8. Never invent teams, people or numbers.',
+      '', 'File: ' + name, '', text
+    ].join('\n');
+  }
+  function aiRead(name, sheets) {
+    if (!(window.claude && window.claude.use)) return Promise.resolve(null);
+    return window.claude.use('sample').then(function (s) {
+      if (!s) return null;
+      return s.json(aiPrompt(name, sheetText(sheets)), { modelTier: 'default' }).then(function (j) {
+        if (!j || !Array.isArray(j.teams)) return null;
+        var teams = j.teams.map(function (t) {
+          var people = Array.isArray(t && t.people) ? t.people.map(function (p) { return String(p).trim(); }).filter(function (p) { return p && !isNum(p); }) : [];
+          var seats = Math.max(0, Math.min(2000, Math.round(+(t && t.seats) || 0)));
+          return { name: String((t && t.name) || '').trim().slice(0, 80), seats: seats, people: people, flag: t && t.flag ? String(t.flag).slice(0, 80) : '' };
+        }).filter(function (t) { return t.name; });
+        var ign = Array.isArray(j.ignored) ? j.ignored : [];
+        return { teams: teams, ignored: ign.reduce(function (s, x) { return s + (Math.round(+(x && x.rows)) || 0); }, 0), why: ign.map(function (x) { return x && x.why ? String(x.why) : ''; }).filter(Boolean).slice(0, 4).join(', ') };
+      }, function (e) { return { error: (e && e.code) || 'error' }; });
+    }, function () { return null; });
+  }
+  // the column reader: first sheet with rows, columns found by header words or by content
+  function columnRead(sheets) {
+    var sh = sheets.filter(function (s) { return filled(s.rows).length; })[0]; if (!sh) return null;
+    var rows = filled(sh.rows), mc = mapColumns(rows); if (!mc) return null;
+    var m = mc.m; if (mc.header) rows = rows.slice(1);
+    var groups = [], byKey = {}, ign = 0;
+    rows.forEach(function (r) {
+      var cell = function (k) { return m[k] === undefined ? '' : String(r[m[k]] === undefined ? '' : r[m[k]]).trim(); };
+      var tn = cell('tname'), tid = cell('team'), key = (tn || tid).toLowerCase();
+      if (!key || SKIP.test(key) || key.length > 60) { ign++; return; }
+      if (!byKey[key]) { byKey[key] = { name: tn || (isNaN(+tid) ? tid : ''), people: [], seats: 0, flag: '' }; groups.push(byKey[key]); }
+      var g = byKey[key], pn = cell('person'), se = parseInt(cell('seats'), 10);
+      if (pn && !isNum(pn)) g.people.push(pn);
+      // seats on person rows repeat the team size (keep the largest); on team rows they add up (a team split over rows)
+      if (se > 0) g.seats = m.person !== undefined ? Math.max(g.seats, se) : g.seats + se;
+    });
+    groups.forEach(function (g) { if (!g.seats && !g.people.length) g.flag = 'no seat count'; });
+    return { teams: groups, ignored: ign, why: ign ? 'totals, notes or empty' : '' };
+  }
+  function progNote(t) { var p = document.getElementById('prognote'); p.textContent = t || ''; p.hidden = !t; }
+  function addProgram(res, fname, how) {
+    var groups = res.teams, nPeople = 0, nSeats = 0, nFlag = 0;
+    batch(function () {
+      groups.forEach(function (g, gi) {
+        var n = Math.max(g.people.length, g.seats); nPeople += g.people.length; nSeats += n; if (g.flag) nFlag++;
+        // a team with the same name already in the program gets the people added to it
+        var t = null;
+        if (g.name) teamIds.forEach(function (x) { if (!t && !store.deleted[x] && (store.teams[x] || '').toLowerCase() === g.name.toLowerCase()) t = x; });
+        if (t) {
+          var cntEl = document.querySelector('.cnt[data-k="need"][data-id="' + t + '"]');
+          var cur = +((cntEl && cntEl.textContent) || 0);
+          var grp = document.querySelector('tbody.grp[data-t="' + t + '"]');
+          var base = store.added[t] ? cur : cur - grp.querySelectorAll('tr.m:not([data-extra])').length + Array.prototype.filter.call(grp.querySelectorAll('tr.m:not([data-extra])'), function (r) { return store.gone[r.dataset.s]; }).length;
+          save('need', t, String(cur + n));
+          g.people.forEach(function (pn, i) { save('names', store.added[t] ? t + '-' + (cur + i + 1) : t + '-x' + (base + i + 1), pn); });
+        } else {
+          t = 'a' + Date.now().toString(36) + gi;
+          saveAdded(t, { order: Date.now() + gi });
+          if (g.name) save('teams', t, g.name);
+          save('need', t, String(n));
+          g.people.forEach(function (pn, i) { save('names', t + '-' + (i + 1), pn); });
+        }
+        if (g.flag) save('flags', t, g.flag);
+      });
+      syncAdded(); paint(); relayout();
+      suggest();
+    });
+    showErr('');
+    progNote('Added ' + groups.length + ' teams · ' + nSeats + ' seats' + (nPeople ? ' · ' + nPeople + ' people' : '') +
+      (res.ignored ? ' · ignored ' + res.ignored + ' rows' + (res.why ? ' (' + res.why + ')' : '') : '') +
+      (nFlag ? ' · ⚠ ' + nFlag + ' to check' : '') + ' · from ' + fname + (how ? ' · ' + how : '') + '.');
+  }
+  upfile.addEventListener('change', function () {
+    var file = upfile.files && upfile.files[0]; if (!file) return;
+    readSheets(file).then(function (sheets) {
+      if (!sheets.some(function (s) { return filled(s.rows).length; })) { showErr('The file is empty.'); return; }
+      progNote('Reading ' + file.name + '…');
+      aiRead(file.name, sheets).then(function (res) {
+        var how = '';
+        if (!res || res.error || !res.teams.length) {
+          how = res && res.error === 'rate_limited' ? 'read without Claude (usage limit reached)' : 'read without Claude';
+          res = columnRead(sheets);
+        }
+        if (!res || !res.teams.length) { progNote(''); showErr('No teams found in ' + file.name + '.'); return; }
+        addProgram(res, file.name, how);
+      });
+    }, function () { showErr('Could not read that file. Use .xlsx or .csv.'); });
+  });
+  function saveAdded(t, val) {
+    pushStep([['added', t, clone(store.added[t])]]);
+    if (val) store.added[t] = val; else delete store.added[t];
+    syncAdded(); paint(); relayout();
+    if (db) {
+      var ref = db.collection('added').doc(t);
+      (val ? ref.set({ order: val.order }) : ref.delete()).then(function () { showErr(''); }, function () {
+        showErr('Not saved. You may not have edit access to this page.');
+      });
+    } else {
+      try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {}
+    }
+  }
+  document.getElementById('addteam').addEventListener('click', function () {
+    var t = 'a' + Date.now().toString(36);
+    saveAdded(t, { order: Date.now() });
+    var grp = document.querySelector('tbody.grp[data-t="' + t + '"]');
+    if (grp) grp.scrollIntoView({ block: 'nearest' });
+  });
+  document.getElementById('undo').addEventListener('click', function () {
+    var step = hist.pop(); if (!step) return;
+    undoing = true;
+    step.slice().reverse().forEach(function (it) {
+      var k = it[0], id = it[1], prev = it[2];
+      if (k === 'moves') { if (prev) store.moves[id] = prev; else delete store.moves[id]; saveMove(id); }
+      else if (k === 'deleted') saveDeleted(id, !!prev);
+      else if (k === 'gone') saveGone(id, !!prev);
+      else if (k === 'added') saveAdded(id, prev);
+      else if (k === 'pseat') writePseat(id, prev || null);
+      else if (k === 'assign') writeAssign(id, prev || null);
+      else if (k === 'title') window.__saveTitle(prev || '', false);
+      else save(k, id, prev === undefined ? '' : String(prev));
+    });
+    undoing = false;
+    paint(); relayout();
+    keepHist();
+  });
+  keepHist();
+  document.getElementById('srows').addEventListener('click', function (e) {
+    var cf = e.target.closest('.confirm');
+    if (cf) {
+      e.stopPropagation(); closeConfirm();
+      if (cf.dataset.s) {
+        var row = document.querySelector('#srows tr.m[data-s="' + cf.dataset.s + '"]'), at = row && row.parentNode.dataset.t;
+        if (at && (store.added[at] || row.hasAttribute('data-extra'))) {
+          var nm = row.querySelector('.nm');
+          var rest = Array.prototype.slice.call(row.parentNode.querySelectorAll(store.added[at] ? 'tr.m' : 'tr.m[data-extra]')), idx = rest.indexOf(row), step = [['need', at, clone(store.need[at])]];
+          for (var q = idx; q < rest.length; q++) step.push(['names', rest[q].dataset.s, clone(store.names[rest[q].dataset.s])]);
+          pushStep(step); undoing = true;
+          for (var q2 = idx; q2 < rest.length - 1; q2++) save('names', rest[q2].dataset.s, store.names[rest[q2 + 1].dataset.s] || '');
+          save('names', rest[rest.length - 1].dataset.s, '');
+          var curNeed = +(document.querySelector('.cnt[data-k="need"][data-id="' + at + '"]').textContent || 0);
+          save('need', at, String(Math.max(0, curNeed - 1)));
+          undoing = false; relayout();
+          return;
+        }
+        saveGone(cf.dataset.s, true); return;
+      }
+      var t = cf.dataset.t; shade(t, false); saveDeleted(t, true); return;
+    }
+    var ab = e.target.closest('.addbtn');
+    if (ab) {
+      e.stopPropagation(); closeConfirm();
+      var at2 = ab.dataset.t, cur = +(document.querySelector('.cnt[data-k="need"][data-id="' + at2 + '"]').textContent || 0);
+      save('need', at2, String(cur + 1));
+      var g2 = ab.closest('tbody'); setOpen(g2, true);
+      return;
+    }
+    var db1 = e.target.closest('.delbtn');
+    if (db1) {
+      e.stopPropagation();
+      var open = db1.parentNode.querySelector('.confirm');
+      closeConfirm();
+      if (open) return;
+      var c = document.createElement('button');
+      c.type = 'button'; c.className = 'confirm'; c.textContent = 'Are you sure?';
+      if (db1.dataset.s) { c.dataset.s = db1.dataset.s; c.setAttribute('aria-label', 'Yes, delete this person'); }
+      else { c.dataset.t = db1.dataset.t; c.setAttribute('aria-label', 'Yes, delete team T' + db1.dataset.t); }
+      db1.parentNode.appendChild(c); c.focus();
+      return;
+    }
+    var b = e.target.closest('.fold');
+    if (b) { var g = b.closest('tbody'); var open = b.getAttribute('aria-expanded') !== 'true'; setOpen(g, open); shade(g.dataset.t, open); return; }
+    var r = e.target.closest('tr.m'); if (!r) return;
+    shade(r.parentNode.dataset.t, false);
+    var on = !r.classList.contains('sh');
+    document.querySelectorAll('#srows tr.m.sh').forEach(function (o) { if (o !== r) o.classList.remove('sh'); });
+    document.querySelectorAll('.dk.ts').forEach(function (d) { d.classList.remove('ts'); });
+    r.classList.toggle('sh', on);
+    // the person's desk = the one in the Seat column (program teams and moved teams sit at other desks than their row id)
+    var seat = deskOfRow(r);
+    if (on && seat) document.querySelectorAll('#desks .dk[data-s="' + seat + '"]').forEach(function (d) { d.classList.add('ts'); });
+  });
+}
+START();
+</script>
+
+</body></html>
