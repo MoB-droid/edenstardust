@@ -1,6 +1,6 @@
-<title>Stardust</title>
+<title>EdenStardust</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,400&family=Inter:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,400&family=Inter:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
   /* Layout: one full-bleed canvas of drifting dust with astronaut monkeys hopping between bright stars; quiet caption bottom-left. Single deliberate dark look. */
   :root {
@@ -80,15 +80,30 @@
   }
   .entries {
     position: fixed; top: calc(58px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
-    width: min(560px, calc(100vw - 32px)); max-height: min(70vh, 620px); display: grid; grid-template-rows: auto auto 1fr; gap: 10px;
+    width: min(560px, calc(100vw - 32px)); max-height: min(70vh, 620px); display: flex; flex-direction: column; gap: 10px;
     padding: 18px 18px 14px; background: rgba(12, 13, 28, 0.88); border: 1px solid rgba(223, 230, 255, 0.14); border-radius: 14px;
     backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
   }
   .entries-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
   .entries-head h2 { margin: 0; font: italic 400 1.6rem/1 var(--display); }
   .entries-head button { font: 500 0.8rem var(--body); color: var(--muted); background: none; border: 0; cursor: pointer; }
+  .head-actions { display: flex; align-items: center; gap: 6px; }
+  .entries-head .icon-btn { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; color: var(--muted); }
+  .entries-head .icon-btn:hover, .entries-head .icon-btn[aria-expanded="true"] { color: var(--dust-warm); background: rgba(243, 217, 164, 0.1); }
+  .entries-head button:focus-visible { outline: 2px solid var(--dust-cool); outline-offset: 2px; }
+  .share { display: grid; gap: 8px; padding: 12px; border-radius: 10px; background: rgba(223, 230, 255, 0.05); border: 1px solid rgba(223, 230, 255, 0.1); }
+  .share label { font-size: 0.78rem; color: var(--muted); }
+  .share-row { display: flex; gap: 8px; }
+  .share-row select { flex: 1 1 auto; min-width: 0; font: 400 0.85rem var(--body); color: var(--text); background: rgba(5, 6, 13, 0.6); border: 1px solid rgba(223, 230, 255, 0.18); border-radius: 8px; padding: 8px 10px; }
+  .share-row button { font: 500 0.85rem var(--body); color: #1a1408; background: var(--dust-warm); border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+  .share-row button:disabled { opacity: 0.5; cursor: default; }
+  .share .msg { text-align: left; min-height: 0; margin: 0; }
+  .share-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 0.82rem; }
+  .share-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; border-top: 1px solid rgba(223, 230, 255, 0.06); word-break: break-word; }
+  .share-list button { font: 500 0.75rem var(--body); color: #ff9c8f; background: none; border: 0; cursor: pointer; flex: none; }
+  .share-title { font-size: 0.75rem; color: var(--muted); }
   .entries-sum { text-transform: none; letter-spacing: 0; font-size: 0.82rem; }
-  .entries-scroll { overflow: auto; min-height: 0; border-top: 1px solid rgba(223, 230, 255, 0.1); }
+  .entries-scroll { flex: 1 1 auto; overflow: auto; min-height: 0; border-top: 1px solid rgba(223, 230, 255, 0.1); }
   .entries table { width: 100%; border-collapse: collapse; font-size: 0.82rem; font-variant-numeric: tabular-nums; }
   .entries th { position: sticky; top: 0; background: rgba(12, 13, 28, 0.98); text-align: left; font-weight: 500; color: var(--muted); padding: 8px 6px; }
   .entries td { padding: 7px 6px; border-top: 1px solid rgba(223, 230, 255, 0.06); vertical-align: top; word-break: break-word; }
@@ -96,6 +111,67 @@
   .chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.72rem; background: rgba(159, 184, 255, 0.14); color: var(--dust-cool); }
   .chip.google { background: rgba(243, 217, 164, 0.16); color: var(--dust-warm); }
   .bar button { font: 500 0.8rem var(--body); color: var(--text); background: rgba(223, 230, 255, 0.08); border: 1px solid rgba(223, 230, 255, 0.18); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+
+  /* Dashboard ("My seat plans"): the Seat Plan look — IBM Plex, butterfly-blue buttons, white tiles. */
+  :root {
+    --d-bg: #f5f7f9; --d-paper: #ffffff; --d-fg: #18202a; --d-muted: #5d6874; --d-line: #d5dce3;
+    --d-btn: #144878; --d-btn-hover: #0e3659; --d-btn-ink: #ffffff; --d-soft: #dbeaf7; --d-red: #b42318;
+    --d-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --d-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --d-bg: #11161b; --d-paper: #171d23; --d-fg: #e3e8ed; --d-muted: #97a2ae; --d-line: #2b343d; --d-soft: #1f3448; --d-red: #ff8a7a; }
+  }
+  :root[data-theme="dark"] { --d-bg: #11161b; --d-paper: #171d23; --d-fg: #e3e8ed; --d-muted: #97a2ae; --d-line: #2b343d; --d-soft: #1f3448; --d-red: #ff8a7a; }
+  body.inside canvas, body.inside .caption { display: none; }
+  .dash {
+    position: fixed; inset: 0; z-index: 10; overflow-y: auto; background: var(--d-bg); color: var(--d-fg); font-family: var(--d-display);
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: calc(24px + env(safe-area-inset-top, 0px)) calc(48px + env(safe-area-inset-bottom, 0px));
+  }
+  .dash-in { max-width: 1280px; margin: 0 auto; display: grid; gap: 24px; }
+  .dash-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; border-bottom: 2px solid var(--d-fg); padding-bottom: 14px; }
+  .dash-brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  .dash-brand svg { width: 44px; height: 44px; flex: none; }
+  .dash-brand h1 { margin: 0; font: 600 clamp(1.5rem, 4vw, 2rem)/1.1 var(--d-display); text-wrap: balance; }
+  .dash .bar { position: static; color: var(--d-muted); font-family: var(--d-mono); flex-wrap: wrap; }
+  .dash .bar button { font: 600 0.85rem var(--d-mono); color: var(--d-btn-ink); background: var(--d-btn); border: 0; border-radius: 8px; padding: 8px 14px; }
+  .dash .bar button:hover { background: var(--d-btn-hover); }
+  .dash-note { margin: 0; color: var(--d-muted); font-size: 0.95rem; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 16px; }
+  .tile { position: relative; display: grid; grid-template-rows: auto 1fr; background: var(--d-paper); border: 1px solid var(--d-line); border-radius: 8px; overflow: hidden; min-width: 0; }
+  .tile:hover { border-color: var(--d-btn); box-shadow: 0 6px 20px rgba(20, 72, 120, 0.12); }
+  .tile .open { display: contents; color: inherit; text-decoration: none; }
+  .tile .thumb { aspect-ratio: 4 / 3; max-width: 100%; background: #ffffff; display: grid; place-items: center; border-bottom: 1px solid var(--d-line); overflow: hidden; }
+  .tile .thumb img { width: 100%; height: 100%; object-fit: contain; }
+  .tile .thumb .none { font: 500 0.9rem var(--d-display); color: #8a95a1; }
+  .tile .info { display: grid; gap: 2px; padding: 10px 12px 12px; padding-right: 92px; min-width: 0; }
+  .tile .info b { font: 600 1.05rem/1.25 var(--d-display); overflow-wrap: anywhere; }
+  .tile .info span { font: 400 0.8rem var(--d-mono); color: var(--d-muted); font-variant-numeric: tabular-nums; }
+  .tile .del { position: absolute; right: 10px; bottom: 12px; font: 500 0.78rem var(--d-mono); color: var(--d-btn); background: var(--d-paper); border: 1px solid var(--d-line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  .tile .del:hover { color: var(--d-red); border-color: var(--d-red); }
+  .tile .del.sure { color: #ffffff; background: var(--d-red); border-color: var(--d-red); }
+  .tile .open:focus-visible .thumb { outline: 3px solid var(--d-btn); outline-offset: -3px; }
+  .tile .del:focus-visible, .newtile:focus-visible, .dash .bar button:focus-visible { outline: 2px solid var(--d-btn); outline-offset: 2px; }
+  .newtile { display: grid; place-items: center; align-content: center; gap: 6px; min-height: 220px; background: transparent; border: 2px dashed var(--d-line); border-radius: 8px; color: var(--d-btn); font: 600 1.1rem var(--d-display); cursor: pointer; }
+  .newtile:hover { border-color: var(--d-btn); background: var(--d-soft); }
+  .newtile .plus { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--d-btn); color: #ffffff; font: 500 1.6rem/1 var(--d-mono); }
+  .newtile:disabled { opacity: 0.6; cursor: wait; }
+  .sample-tag { font: 600 0.7rem var(--d-mono); color: var(--d-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .entries { z-index: 30; }
+  @media (max-width: 600px) { .entries { left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); width: auto; } }
+  body.inside .entries { background: var(--d-paper); color: var(--d-fg); border-color: var(--d-line); box-shadow: 0 12px 40px rgba(24, 32, 42, 0.18); backdrop-filter: none; -webkit-backdrop-filter: none; font-family: var(--d-display); }
+  body.inside .entries-head h2 { font: 600 1.4rem/1 var(--d-display); }
+  body.inside .entries th { background: var(--d-paper); color: var(--d-muted); }
+  body.inside .entries td { border-top-color: var(--d-line); }
+  body.inside .entries td:first-child, body.inside .entries-sum, body.inside .share label, body.inside .share-title, body.inside .entries-head button { color: var(--d-muted); }
+  body.inside .entries-scroll { border-top-color: var(--d-line); }
+  body.inside .share { background: var(--d-bg); border-color: var(--d-line); }
+  body.inside .share-row select { background: var(--d-paper); color: var(--d-fg); border-color: var(--d-line); }
+  body.inside .share-row button { background: var(--d-btn); color: #ffffff; }
+  body.inside .entries-head .icon-btn:hover, body.inside .entries-head .icon-btn[aria-expanded="true"] { color: var(--d-btn); background: var(--d-soft); }
+  body.inside .share .msg.ok { color: #1d7a3e; }
+  body.inside .share .msg.error, body.inside .share-list button { color: var(--d-red); }
 </style>
 
 <canvas id="sky" aria-label="Animated field of stardust with monkeys in astronaut suits jumping between bright stars"></canvas>
@@ -113,7 +189,22 @@
 <section class="entries" id="entries" hidden aria-label="Login entries">
   <div class="entries-head">
     <h2>Entries</h2>
-    <button type="button" id="entries-close">Close</button>
+    <div class="head-actions">
+      <button type="button" class="icon-btn" id="share-btn" hidden aria-label="Share entries" title="Share entries" aria-expanded="false" aria-controls="share">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
+      </button>
+      <button type="button" id="entries-close">Close</button>
+    </div>
+  </div>
+  <div class="share" id="share" hidden>
+    <label for="share-select">Share entries with a signed-up person</label>
+    <div class="share-row">
+      <select id="share-select"></select>
+      <button type="button" id="share-add">Share</button>
+    </div>
+    <p class="msg" id="share-msg" role="status"></p>
+    <div class="share-title" id="share-title">Shared with</div>
+    <ul class="share-list" id="share-list"></ul>
   </div>
   <p class="entries-sum" id="entries-sum">Loading…</p>
   <div class="entries-scroll">
@@ -123,6 +214,21 @@
     </table>
   </div>
 </section>
+
+<div class="dash" id="dash" hidden>
+  <div class="dash-in">
+    <header class="dash-head" id="dash-head">
+      <div class="dash-brand">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="13" fill="#144878"/><g fill="#ffffff"><path d="M23.5 21.5 C21 12.8 15.2 8.4 7 7 C6.6 15.4 7.8 22.2 11.6 25.4 C14.9 28 19 28.2 23.5 27.5 Z"/><path d="M23.5 28.5 C16.4 28.4 11.6 31.4 10.5 41 C17.8 41.6 22.8 37.2 23.5 31.6 Z"/><g transform="translate(48 0) scale(-1 1)"><path d="M23.5 21.5 C21 12.8 15.2 8.4 7 7 C6.6 15.4 7.8 22.2 11.6 25.4 C14.9 28 19 28.2 23.5 27.5 Z"/><path d="M23.5 28.5 C16.4 28.4 11.6 31.4 10.5 41 C17.8 41.6 22.8 37.2 23.5 31.6 Z"/></g></g></svg>
+        <h1>My seat plans</h1>
+      </div>
+    </header>
+    <p class="dash-note" id="dash-note" role="status"></p>
+    <div class="tiles" id="tiles">
+      <button type="button" class="newtile" id="newplan"><span class="plus" aria-hidden="true">+</span>New plan</button>
+    </div>
+  </div>
+</div>
 
 <div class="gate" id="gate">
   <form class="card" id="auth-form" novalidate>
@@ -331,6 +437,7 @@
   }
 
   function frame(t) {
+    if (document.body.classList.contains('inside')) { if (!still) requestAnimationFrame(frame); return; }
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
     ctx.fillStyle = '#05060d';
@@ -388,6 +495,8 @@
   const form = $('auth-form'), email = $('email'), password = $('password');
   const submit = $('submit'), msg = $('msg'), tabLogin = $('tab-login'), tabSignup = $('tab-signup');
   let mode = 'login', previewing = false, sb = null;
+  const dash = $('dash'), dashNote = $('dash-note'), tiles = $('tiles'), newPlanBtn = $('newplan');
+  let plansLoadedFor = null, currentUserId = null;
 
   try { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY); } catch (e) { sb = null; }
 
@@ -396,16 +505,115 @@
   const entries = $('entries'), entriesBtn = $('entries-btn'), entriesSum = $('entries-sum'), entriesRows = $('entries-rows');
   let entriesLoadedFor = null;
 
+  const shareBtn = $('share-btn'), sharePanel = $('share'), shareSelect = $('share-select'), shareAdd = $('share-add');
+  const shareMsg = $('share-msg'), shareList = $('share-list'), shareTitle = $('share-title');
+  let role = null, roleCheckFor = null, lastRows = [], viewers = [], previewViewers = [];
+
+  // Master sees everything and can share; people the master shares with (viewers) see the list only.
   function show(user) {
     const inside = !!user;
-    gate.hidden = inside; bar.hidden = !inside; caption.hidden = !inside;
+    gate.hidden = inside; bar.hidden = !inside; caption.hidden = true;
+    dash.hidden = !inside; document.body.classList.toggle('inside', inside);
     who.textContent = user ? user.email : '';
-    if (!inside) password.value = '';
-    const master = inside && (previewing || (user.email || '').toLowerCase() === MASTER);
-    entriesBtn.hidden = !master;
-    if (!master) { entries.hidden = true; entriesLoadedFor = null; return; }
-    if (entriesLoadedFor !== user.email) { entriesLoadedFor = user.email; entries.hidden = false; loadEntries(); }
+    currentUserId = user && user.id ? user.id : null;
+    if (!inside) { password.value = ''; plansLoadedFor = null; return setRole(null); }
+    if (plansLoadedFor !== user.email) { plansLoadedFor = user.email; loadPlans(); }
+    const email = (user.email || '').toLowerCase();
+    if (previewing || email === MASTER) return grant('master', email);
+    checkViewer(email);
   }
+
+  function setRole(r) {
+    role = r; roleCheckFor = null; entriesLoadedFor = null;
+    entriesBtn.hidden = true; entries.hidden = true; shareBtn.hidden = true; closeShare();
+  }
+
+  function grant(r, email) {
+    role = r;
+    entriesBtn.hidden = false;
+    shareBtn.hidden = r !== 'master';
+    if (r !== 'master') closeShare();
+    if (entriesLoadedFor !== email) { entriesLoadedFor = email; entries.hidden = false; loadEntries(); }
+  }
+
+  async function checkViewer(email) {
+    if (roleCheckFor === email || !sb) return;
+    roleCheckFor = email;
+    try {
+      const { data, error } = await sb.from('entry_viewers').select('email').eq('email', email).maybeSingle();
+      if (!error && data && roleCheckFor === email) grant('viewer', email);
+    } catch (e) {}
+  }
+
+  function closeShare() { sharePanel.hidden = true; shareBtn.setAttribute('aria-expanded', 'false'); shareMsg.textContent = ''; }
+
+  function renderShare() {
+    const shared = new Set(viewers.map(v => v.email));
+    const candidates = [...new Set(lastRows.map(r => (r.email || '').toLowerCase()))]
+      .filter(e => e && e !== MASTER && !shared.has(e)).sort();
+    shareSelect.replaceChildren();
+    const first = document.createElement('option');
+    first.value = ''; first.textContent = candidates.length ? 'Choose a person…' : 'No other signed-up people to add';
+    shareSelect.append(first, ...candidates.map(e => { const o = document.createElement('option'); o.value = e; o.textContent = e; return o; }));
+    shareSelect.disabled = !candidates.length; shareAdd.disabled = !candidates.length;
+    shareTitle.textContent = viewers.length ? 'Shared with' : 'Not shared with anyone yet.';
+    shareList.replaceChildren(...viewers.map(v => {
+      const li = document.createElement('li');
+      const span = document.createElement('span'); span.textContent = v.email;
+      const rm = document.createElement('button'); rm.type = 'button'; rm.textContent = 'Remove';
+      rm.addEventListener('click', () => removeViewer(v.email));
+      li.append(span, rm); return li;
+    }));
+  }
+
+  async function loadViewers() {
+    if (previewing) { viewers = previewViewers.slice(); return renderShare(); }
+    try {
+      const { data, error } = await sb.from('entry_viewers').select('email, added_at').order('added_at', { ascending: true });
+      if (error) throw error;
+      viewers = data || [];
+    } catch (err) {
+      viewers = [];
+      shareMsg.className = 'msg error';
+      shareMsg.textContent = /relation|does not exist|schema cache/i.test(err.message || '')
+        ? 'Sharing is not set up yet in Supabase.' : 'Could not load sharing: ' + (err.message || 'unknown error');
+    }
+    renderShare();
+  }
+
+  async function addViewer() {
+    const email = shareSelect.value;
+    if (!email) return;
+    shareAdd.disabled = true;
+    if (previewing) { previewViewers.push({ email }); shareMsg.className = 'msg ok'; shareMsg.textContent = 'Shared with ' + email + '.'; return loadViewers(); }
+    try {
+      const { error } = await sb.from('entry_viewers').insert({ email });
+      if (error) throw error;
+      shareMsg.className = 'msg ok'; shareMsg.textContent = 'Shared with ' + email + '. They see Entries next time they open the site.';
+    } catch (err) { shareMsg.className = 'msg error'; shareMsg.textContent = 'Could not share: ' + (err.message || 'unknown error'); }
+    loadViewers();
+  }
+
+  async function removeViewer(email) {
+    if (previewing) { previewViewers = previewViewers.filter(v => v.email !== email); }
+    else {
+      try {
+        const { error } = await sb.from('entry_viewers').delete().eq('email', email);
+        if (error) throw error;
+      } catch (err) { shareMsg.className = 'msg error'; shareMsg.textContent = 'Could not remove: ' + (err.message || 'unknown error'); return; }
+    }
+    shareMsg.className = 'msg'; shareMsg.textContent = 'Stopped sharing with ' + email + '.';
+    loadViewers();
+  }
+
+  shareBtn.addEventListener('click', () => {
+    if (role !== 'master') return;
+    const open = sharePanel.hidden;
+    if (!open) return closeShare();
+    sharePanel.hidden = false; shareBtn.setAttribute('aria-expanded', 'true'); shareMsg.textContent = '';
+    loadViewers();
+  });
+  shareAdd.addEventListener('click', addViewer);
 
   function fmtTime(iso) {
     try { return new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
@@ -414,6 +622,8 @@
 
   // One row per person: first and last entry, ordered by first entry (earliest = #1).
   function renderEntries(rows, note) {
+    lastRows = rows;
+    if (!sharePanel.hidden) renderShare();
     const byEmail = new Map();
     for (const r of rows) {
       const t = new Date(r.created_at).getTime();
@@ -526,6 +736,106 @@
     try { if (sb) await sb.auth.signOut(); } catch (e) {}
     show(null);
   });
+
+  // ---- My seat plans: one tile per plan (picture, name, seats); New plan opens an empty Seat Plan.
+  function fmtDay(iso) {
+    try { return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); } catch (e) { return ''; }
+  }
+  function dashSay(t) { dashNote.textContent = t || ''; dashNote.hidden = !t; }
+
+  function renderPlans(list, thumbs, sample) {
+    tiles.querySelectorAll('.tile').forEach(n => n.remove());
+    list.forEach(p => {
+      const tile = document.createElement('div');
+      tile.className = 'tile';
+      const a = document.createElement('a');
+      a.className = 'open';
+      a.href = sample ? '#' : 'plan.html?id=' + encodeURIComponent(p.id);
+      a.setAttribute('aria-label', 'Open ' + (p.title || 'seat plan'));
+      if (sample) a.addEventListener('click', e => { e.preventDefault(); dashSay('Sample tile. Real plans open on edenstardust.com.'); });
+      const th = document.createElement('div'); th.className = 'thumb';
+      const url = thumbs[p.thumb];
+      if (url) { const img = document.createElement('img'); img.src = url; img.alt = ''; img.loading = 'lazy'; th.append(img); }
+      else { const n = document.createElement('span'); n.className = 'none'; n.textContent = 'No layout yet'; th.append(n); }
+      const info = document.createElement('div'); info.className = 'info';
+      const b = document.createElement('b'); b.textContent = p.title || 'New floor';
+      const s = document.createElement('span'); s.textContent = (p.seats || 0) + ' seats · ' + fmtDay(p.updated_at);
+      info.append(b, s);
+      if (sample) { const t = document.createElement('span'); t.className = 'sample-tag'; t.textContent = 'Sample'; info.append(t); }
+      a.append(th, info);
+      const del = document.createElement('button');
+      del.type = 'button'; del.className = 'del'; del.textContent = 'Delete';
+      del.setAttribute('aria-label', 'Delete ' + (p.title || 'seat plan'));
+      del.addEventListener('click', () => {
+        if (!del.classList.contains('sure')) {
+          tiles.querySelectorAll('.del.sure').forEach(o => { o.classList.remove('sure'); o.textContent = 'Delete'; });
+          del.classList.add('sure'); del.textContent = 'Are you sure?'; return;
+        }
+        deletePlan(p, sample);
+      });
+      tile.append(a, del);
+      tiles.append(tile);
+    });
+    dashSay(list.length ? '' : 'No seat plans yet. Press New plan to start one.');
+  }
+
+  let samplePlans = null;
+  async function loadPlans() {
+    if (previewing || !onSite) {
+      if (!samplePlans) {
+        const now = Date.now();
+        samplePlans = [
+          { id: 's1', title: 'Example tower · floor 25', seats: 304, thumb: null, updated_at: new Date(now - 2 * 3600e3).toISOString() },
+          { id: 's2', title: 'Example HQ · level 1', seats: 118, thumb: null, updated_at: new Date(now - 6 * 86400e3).toISOString() }
+        ];
+      }
+      return renderPlans(samplePlans, {}, true);
+    }
+    dashSay('Loading your plans…');
+    try {
+      const { data, error } = await sb.from('plans').select('id, title, thumb, seats, updated_at').order('updated_at', { ascending: false });
+      if (error) throw error;
+      const paths = (data || []).map(p => p.thumb).filter(Boolean), thumbs = {};
+      if (paths.length) {
+        const r = await sb.storage.from('plan-files').createSignedUrls(paths, 3600);
+        (r.data || []).forEach(x => { if (x.signedUrl) thumbs[x.path] = x.signedUrl; });
+      }
+      renderPlans(data || [], thumbs, false);
+    } catch (err) {
+      dashSay('Could not load your plans: ' + (err.message || 'unknown error') + '. Refresh to try again.');
+    }
+  }
+
+  async function deletePlan(p, sample) {
+    if (sample) { samplePlans = samplePlans.filter(x => x.id !== p.id); return loadPlans(); }
+    try {
+      const { data: files } = await sb.storage.from('plan-files').list(curUserId() + '/' + p.id, { limit: 1000 });
+      if (files && files.length) await sb.storage.from('plan-files').remove(files.map(f => curUserId() + '/' + p.id + '/' + f.name));
+      const { error } = await sb.from('plans').delete().eq('id', p.id);
+      if (error) throw error;
+      loadPlans();
+    } catch (err) { dashSay('Could not delete the plan: ' + (err.message || 'unknown error')); }
+  }
+
+  function curUserId() { return currentUserId; }
+
+  newPlanBtn.addEventListener('click', async () => {
+    if (previewing || !onSite) {
+      samplePlans.unshift({ id: 's' + Date.now(), title: 'New floor', seats: 0, thumb: null, updated_at: new Date().toISOString() });
+      dashSay('Sample plan added. On edenstardust.com, New plan opens the Seat Plan editor.');
+      return renderPlans(samplePlans, {}, true);
+    }
+    newPlanBtn.disabled = true; dashSay('Creating a new plan…');
+    try {
+      const { data, error } = await sb.from('plans').insert({ title: 'New floor' }).select('id').single();
+      if (error) throw error;
+      location.href = 'plan.html?id=' + encodeURIComponent(data.id);
+    } catch (err) { newPlanBtn.disabled = false; dashSay('Could not create a plan: ' + (err.message || 'unknown error')); }
+  });
+
+  // the email, Entries and Sign out sit in the dashboard header
+  $('dash-head').append(bar);
+  addEventListener('pageshow', e => { if (e.persisted && plansLoadedFor) loadPlans(); });
 
   if (!onSite) {
     const p = $('preview');
