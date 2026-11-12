@@ -247,7 +247,8 @@ main > section.stack.dropping::after { content: attr(data-drop); position: absol
 main > section.stack:first-child.dropping .planwrap { opacity: .5; }
 .seats td.ty { cursor: text; width: 1%; }
 .seats td.ty.auto { color: var(--muted); }
-.seats td.ty input { font: 500 14px var(--mono); width: 3.2em; padding: 4px 6px; margin: -5px 0; border: 1px solid var(--accent); border-radius: 4px; background: var(--paper); color: var(--fg); text-transform: uppercase; }
+.seats td.ty { cursor: pointer; }
+.seats td.ty select { font: 500 13px var(--mono); padding: 3px 4px; margin: -5px 0; border: 1px solid var(--accent); border-radius: 4px; background: var(--paper); color: var(--fg); }
 /* unused desk (no team holds it): white, desk outline only */
 .dk.free:not(.hi):not(.th):not(.ts):not(.drop) rect { fill: var(--plan); fill-opacity: 1; stroke: var(--desk-edge); stroke-width: 1.4; }
 .dk.free:not(.hi):not(.th):not(.ts) text { fill: var(--muted); }
@@ -385,7 +386,7 @@ function renderLayout(L) {
   var rows = order.filter(function (t) { return t !== '0'; }).map(function (t) {
     var ds = teams[t];
     return '<tbody class="grp" data-t="' + t + '"><tr class="gh"><td><button type="button" class="fold" aria-expanded="false"><span class="car" aria-hidden="true"></span>T' + t + '</button></td><td class="tn ed" data-k="teams" data-id="' + t + '" title="Double-click to edit"></td><td class="num cnt ed" data-k="need" data-id="' + t + '" data-def="' + ds.length + '" title="Double-click to edit">' + ds.length + '</td><td></td><td class="del"><span class="acts"><button type="button" class="addbtn tip" data-tip="add team member" data-t="' + t + '" aria-label="Add a person to team T' + t + '">+</button><button type="button" class="delbtn" data-t="' + t + '" aria-label="Delete team T' + t + '">Delete</button></span></td></tr>' +
-      ds.map(function (e, i) { return '<tr data-s="' + e.s + '" class="m" hidden><td class="num">' + (i + 1) + '</td><td class="nm ed" data-k="names" data-id="' + e.s + '" title="Double-click to edit"></td><td class="num">' + e.s + '</td><td class="num ty" title="Double-click to set the type: OS, S, M or C"></td><td class="del"><button type="button" class="delbtn" data-s="' + e.s + '" aria-label="Delete this person">Delete</button></td></tr>'; }).join('') + '</tbody>';
+      ds.map(function (e, i) { return '<tr data-s="' + e.s + '" class="m" hidden><td class="num">' + (i + 1) + '</td><td class="nm ed" data-k="names" data-id="' + e.s + '" title="Double-click to edit"></td><td class="num">' + e.s + '</td><td class="num ty" title="Click to choose the type: OS, S, M or C"></td><td class="del"><button type="button" class="delbtn" data-s="' + e.s + '" aria-label="Delete this person">Delete</button></td></tr>'; }).join('') + '</tbody>';
   }).join('');
   var tbl = document.getElementById('srows');
   tbl.querySelectorAll('tbody').forEach(function (b) { b.remove(); });
@@ -1088,26 +1089,30 @@ function MAIN() {
     inp.addEventListener('blur', function () { finish(true); });
     inp.addEventListener('click', function (ev) { ev.stopPropagation(); });
   });
-  document.getElementById('srows').addEventListener('dblclick', function (e) {
-    var c = e.target.closest('td.ty'); if (!c || c.querySelector('input')) return;
-    var r = c.closest('tr.m'), id = r.dataset.s;
-    var inp = document.createElement('input');
-    inp.type = 'text'; inp.id = 'ed-ptype-' + id; inp.value = store.ptype[id] || ''; inp.maxLength = 2;
-    inp.placeholder = c.textContent; inp.setAttribute('aria-label', 'Desk type: OS, S, M or C (empty = from the desk)');
-    c.textContent = ''; c.appendChild(inp); inp.focus(); inp.select();
+  // the Type cell: one click opens a list of the allowed types (nothing else can be entered)
+  document.getElementById('srows').addEventListener('click', function (e) {
+    var c = e.target.closest('td.ty'); if (!c) return;
+    e.stopPropagation();
+    if (c.querySelector('select')) return;
+    var r = c.closest('tr.m'), id = r.dataset.s, cur = store.ptype[id] || '', auto = c.classList.contains('auto') ? c.textContent : '';
+    var sel = document.createElement('select');
+    sel.id = 'ed-ptype-' + id; sel.setAttribute('aria-label', 'Desk type');
+    [['', 'Automatic' + (auto ? ' (' + auto + ')' : '')], ['OS', 'OS · open space'], ['S', 'S · single desk'], ['M', 'M · single desk'], ['C', 'C · single desk']].forEach(function (o) {
+      var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; if (o[0] === cur) op.selected = true; sel.appendChild(op);
+    });
+    c.textContent = ''; c.appendChild(sel); sel.focus();
+    try { if (sel.showPicker) sel.showPicker(); } catch (err) {}
     var done = false;
     function finish(keep) {
-      if (done) return; done = true; var v = inp.value.trim().toUpperCase(); c.removeChild(inp);
-      if (keep) {
-        if (v && !/^(OS|S|M|C)$/.test(v)) showErr('Type must be OS, S, M or C.');
-        else if ((store.ptype[id] || '') !== v) { showErr(''); pushStep([['ptype', id, store.ptype[id] || null]]); writePtype(id, v || null); }
-      }
+      if (done) return; done = true; var v = sel.value; c.removeChild(sel);
+      if (keep && (store.ptype[id] || '') !== v) { showErr(''); pushStep([['ptype', id, store.ptype[id] || null]]); writePtype(id, v || null); }
       relayout();
     }
-    inp.addEventListener('keydown', function (ev) { ev.stopPropagation(); if (ev.key === 'Enter') finish(true); else if (ev.key === 'Escape') finish(false); });
-    inp.addEventListener('blur', function () { finish(true); });
-    inp.addEventListener('click', function (ev) { ev.stopPropagation(); });
-  });
+    sel.addEventListener('change', function () { finish(true); });
+    sel.addEventListener('keydown', function (ev) { ev.stopPropagation(); if (ev.key === 'Escape') finish(false); else if (ev.key === 'Enter') finish(true); });
+    sel.addEventListener('blur', function () { finish(false); });
+    sel.addEventListener('click', function (ev) { ev.stopPropagation(); });
+  }, true);
   var teamsG = document.getElementById('teams');
   // Shading follows the desks a team holds now (its own, the ones Suggest gave it, or the ones a drag gave it).
   var SHADED = {}, CUR = {};
@@ -1157,7 +1162,7 @@ function MAIN() {
   function addedIds() { return Object.keys(store.added).sort(function (a, b) { return store.added[a].order - store.added[b].order; }); }
   function esc(v) { return String(v).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function personRow(pid, i) {
-    return '<tr data-s="' + esc(pid) + '" class="m" hidden><td class="num">' + i + '</td><td class="nm ed" data-k="names" data-id="' + esc(pid) + '" title="Double-click to edit"></td><td class="num">–</td><td class="num ty" title="Double-click to set the type: OS, S, M or C"></td><td class="del"><button type="button" class="delbtn" data-s="' + esc(pid) + '" aria-label="Delete this person">Delete</button></td></tr>';
+    return '<tr data-s="' + esc(pid) + '" class="m" hidden><td class="num">' + i + '</td><td class="nm ed" data-k="names" data-id="' + esc(pid) + '" title="Double-click to edit"></td><td class="num">–</td><td class="num ty" title="Click to choose the type: OS, S, M or C"></td><td class="del"><button type="button" class="delbtn" data-s="' + esc(pid) + '" aria-label="Delete this person">Delete</button></td></tr>';
   }
   function syncAdded() {
     var ids = addedIds(), tbl = document.getElementById('srows'), tg = document.getElementById('teams');
