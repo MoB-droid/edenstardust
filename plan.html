@@ -233,6 +233,12 @@ main > section.stack { display: grid; gap: 10px; }
   main > section.stack:last-child .totrow, main > section.stack:last-child .seats, .prognote { max-width: none; }
 }
 @media (max-width: 560px) { h1 { font-size: 22px; } .sheet { grid-template-columns: repeat(2, auto); } }
+/* drag and drop: the frame under the pointer lights up with what will happen */
+main > section.stack { position: relative; }
+main > section.stack.dropping { outline: 3px dashed var(--btn); outline-offset: -3px; }
+main > section.stack.dropping::after { content: attr(data-drop); position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 20; pointer-events: none;
+  max-width: 90%; text-align: center; font: 600 18px var(--display); color: var(--btn-ink); background: var(--btn); padding: 12px 18px; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+main > section.stack:first-child.dropping .planwrap { opacity: .5; }
 </style>
 <main>
   <section class="stack">
@@ -1790,6 +1796,33 @@ function MAIN() {
         addProgram(res, file.name, how);
       });
     }, function () { showErr('Could not read that file. Use .xlsx or .csv.'); });
+  });
+  // ---- Drag and drop: drop a floor plan (PDF / PNG / JPG) or a program (Excel / CSV) anywhere on the page.
+  // The frame under the pointer lights up; the file type decides whether it is the layout or the program.
+  var leftSec = document.querySelector('main > section.stack:first-child'), rightSec = document.querySelector('main > section.stack:last-child'), dropDepth = 0;
+  leftSec.dataset.drop = 'Drop the floor plan here (PDF, PNG or JPG)';
+  rightSec.dataset.drop = 'Drop the program here (Excel or CSV)';
+  function dropKind(name) { return /[.](pdf|png|jpe?g)$/i.test(name) ? 'layout' : /[.](xlsx|xlsm|xls|csv|txt)$/i.test(name) ? 'program' : null; }
+  function hasFiles(e) { return !!(e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0); }
+  function dropMark(e) {
+    var over = e.target && e.target.closest ? e.target.closest('main > section.stack') : null;
+    leftSec.classList.toggle('dropping', over === leftSec);
+    rightSec.classList.toggle('dropping', over === rightSec);
+  }
+  function clearDrop() { dropDepth = 0; leftSec.classList.remove('dropping'); rightSec.classList.remove('dropping'); }
+  window.addEventListener('dragenter', function (e) { if (!hasFiles(e)) return; e.preventDefault(); dropDepth++; dropMark(e); });
+  window.addEventListener('dragover', function (e) { if (!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; dropMark(e); });
+  window.addEventListener('dragleave', function (e) { if (!hasFiles(e)) return; if (--dropDepth <= 0) clearDrop(); });
+  window.addEventListener('drop', function (e) {
+    if (!hasFiles(e)) return;
+    e.preventDefault(); clearDrop();
+    var f = e.dataTransfer.files && e.dataTransfer.files[0]; if (!f) return;
+    var kind = dropKind(f.name);
+    if (!kind) { layNote('Drop a floor plan (PDF, PNG or JPG) or a program (Excel or CSV).'); return; }
+    var input = kind === 'layout' ? layfile : upfile;
+    try { var dt = new DataTransfer(); dt.items.add(f); input.files = dt.files; }
+    catch (err) { layNote('This browser cannot take dropped files. Use the Upload buttons.'); return; }
+    input.dispatchEvent(new Event('change'));
   });
   function saveAdded(t, val) {
     pushStep([['added', t, clone(store.added[t])]]);
