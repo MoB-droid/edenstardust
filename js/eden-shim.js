@@ -160,6 +160,11 @@
     }
     var cur = colOf('plan').current, paths = [];
     if (cur && typeof cur.img === 'string' && cur.img.indexOf('/_blob/') === 0) paths.push(cur.img.slice(7));
+    // the newest uploaded PDF too (the editor may need to read it again)
+    var recs = Object.keys(colOf('layouts')).map(function (k) { return colOf('layouts')[k]; })
+      .filter(function (r) { return r && r.asset && /[.]pdf$/i.test(r.name || ''); })
+      .sort(function (a, b) { return String(b.at || '').localeCompare(String(a.at || '')); });
+    if (recs.length) paths.push(recs[0].asset);
     if (!paths.length) return;
     return sb.storage.from(BUCKET).createSignedUrls(paths, 60 * 60 * 12).then(function (sr) {
       (sr.data || []).forEach(function (x) { if (x.signedUrl) signed['/_blob/' + x.path] = x.signedUrl; });

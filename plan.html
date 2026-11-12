@@ -578,6 +578,125 @@ function planPicture(page, E) {
     return new Promise(function (ok, bad) { c.toBlob(function (b) { if (b) ok(b); else bad({ code: 'png' }); }, 'image/png'); });
   });
 }
+// ---- The building's shell and core, read from the plan picture, for placing team markers.
+// Outside = everything reachable from the edge of the drawing without crossing a drawn line (walls, facade).
+// Core = the biggest connected block of thick grey walls (the concrete core).
+// Saved as a grid of 8 pt cells: L.shell = { x, y, cell, cols, rows, out } (out = run lengths, inside first), L.core = [x0, y0, x1, y1].
+function buildingShell(page, E) {
+  var R = [E[0] - 250, E[1] - 250, E[2] + 250, E[3] + 250], W = R[2] - R[0], H = R[3] - R[1];
+  var s = Math.min(1, Math.sqrt(8e6 / (W * H)));
+  var vp = page.getViewport({ scale: s, offsetX: -R[0] * s, offsetY: -R[1] * s });
+  var cw = Math.round(W * s), ch = Math.round(H * s);
+  var c = document.createElement('canvas'); c.width = cw; c.height = ch;
+  var ctx = c.getContext('2d'); ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cw, ch);
+  return page.render({ canvasContext: ctx, viewport: vp }).promise.then(function () {
+    var px = ctx.getImageData(0, 0, cw, ch).data, N = cw * ch, lum = new Uint8Array(N);
+    for (var i = 0; i < N; i++) lum[i] = (0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2]) | 0;
+    // walls and lines, thickened by about 3 pt so small gaps in a line still close it
+    var r = Math.max(1, Math.round(3 * s)), ink = new Uint8Array(N), tmp = new Uint8Array(N);
+    for (i = 0; i < N; i++) ink[i] = lum[i] < 232 ? 1 : 0;
+    for (var y = 0; y < ch; y++) { var run = -1e9; for (var x = 0; x < cw; x++) { if (ink[y * cw + x]) run = x; tmp[y * cw + x] = x - run <= r ? 1 : 0; } run = 1e9; for (x = cw - 1; x >= 0; x--) { if (ink[y * cw + x]) run = x; if (run - x <= r) tmp[y * cw + x] = 1; } }
+    for (x = 0; x < cw; x++) { run = -1e9; for (y = 0; y < ch; y++) { if (tmp[y * cw + x]) run = y; ink[y * cw + x] = y - run <= r ? 1 : 0; } run = 1e9; for (y = ch - 1; y >= 0; y--) { if (tmp[y * cw + x]) run = y; if (run - y <= r) ink[y * cw + x] = 1; } }
+    // outside: flood from the edges of the picture through blank paper
+    var out = new Uint8Array(N), q = new Int32Array(N), qh = 0, qt = 0;
+    function seed(k) { if (!ink[k] && !out[k]) { out[k] = 1; q[qt++] = k; } }
+    for (x = 0; x < cw; x++) { seed(x); seed((ch - 1) * cw + x); }
+    for (y = 0; y < ch; y++) { seed(y * cw); seed(y * cw + cw - 1); }
+    while (qh < qt) { var k = q[qh++], kx = k % cw; if (kx > 0) seed(k - 1); if (kx < cw - 1) seed(k + 1); if (k >= cw) seed(k - cw); if (k < N - cw) seed(k + cw); }
+    // core: thick grey (not white, not black line edges), kept only where a 5 pt square is all grey
+    var g = new Uint8Array(N);
+    for (i = 0; i < N; i++) g[i] = lum[i] >= 60 && lum[i] <= 185 ? 1 : 0;
+    var e = Math.max(1, Math.round(2.5 * s)), gx = new Uint8Array(N);
+    for (y = 0; y < ch; y++) { var cnt = 0; for (x = 0; x < cw; x++) { cnt = g[y * cw + x] ? cnt + 1 : 0; gx[y * cw + x] = cnt > 2 * e ? 1 : 0; } }
+    var gg = new Uint8Array(N);
+    for (x = 0; x < cw; x++) { cnt = 0; for (y = 0; y < ch; y++) { cnt = gx[y * cw + x] ? cnt + 1 : 0; if (cnt > 2 * e) gg[y * cw + x] = 1; } }
+    // connected grey blocks (joined across gaps of up to 4 cells of 4 pt); the one with the largest outline is the core
+    var cs = Math.max(1, Math.round(4 * s)), gc = Math.ceil(cw / cs), gr = Math.ceil(ch / cs), cell = new Uint8Array(gc * gr);
+    for (y = 0; y < ch; y++) for (x = 0; x < cw; x++) if (gg[y * cw + x]) cell[((y / cs) | 0) * gc + ((x / cs) | 0)] = 1;
+    var lab = new Int32Array(gc * gr), best = null, nl = 0, comps = [];
+    for (var c0 = 0; c0 < gc * gr; c0++) {
+      if (!cell[c0] || lab[c0]) continue;
+      nl++; var st = [c0], bx0 = 1e9, by0 = 1e9, bx1 = -1, by1 = -1, n = 0; lab[c0] = nl;
+      while (st.length) {
+        var cc = st.pop(), cx = cc % gc, cy = (cc / gc) | 0; n++;
+        if (cx < bx0) bx0 = cx; if (cx > bx1) bx1 = cx; if (cy < by0) by0 = cy; if (cy > by1) by1 = cy;
+        for (var dy = -4; dy <= 4; dy++) for (var dx = -4; dx <= 4; dx++) {
+          var nx = cx + dx, ny = cy + dy; if (nx < 0 || ny < 0 || nx >= gc || ny >= gr) continue;
+          var nk = ny * gc + nx; if (cell[nk] && !lab[nk]) { lab[nk] = nl; st.push(nk); }
+        }
+      }
+      var area = (bx1 - bx0 + 1) * (by1 - by0 + 1);
+      if (n > 60) { comps.push({ area: area, b: [bx0, by0, bx1 + 1, by1 + 1] }); if (!best || area > best.area) best = comps[comps.length - 1]; }
+    }
+    var core = null;
+    if (best) {
+      // the core can be several big wall blocks with corridors between them: join big blocks within about 320 pt
+      var U = best.b.slice(), grew = true;
+      while (grew) {
+        grew = false;
+        comps.forEach(function (k) {
+          if (k.used || k === best || k.area < 0.15 * best.area) return;
+          var gx = Math.max(0, Math.max(U[0], k.b[0]) - Math.min(U[2], k.b[2])), gy = Math.max(0, Math.max(U[1], k.b[1]) - Math.min(U[3], k.b[3]));
+          if (gx * cs / s <= 320 && gy * cs / s <= 320) { k.used = true; grew = true; U = [Math.min(U[0], k.b[0]), Math.min(U[1], k.b[1]), Math.max(U[2], k.b[2]), Math.max(U[3], k.b[3])]; }
+        });
+      }
+      best = { area: best.area, b: U };
+      core = best.b.map(function (v, i) { return Math.round((i % 2 ? R[1] : R[0]) + v * cs / s); });
+      // a real core is a large block well inside the building
+      if (core[2] - core[0] < 150 || core[3] - core[1] < 150) core = null;
+    }
+    // every enclosed space inside the building (a room, an open space) gets its own number
+    var sp = new Int32Array(N), nsp = 1;
+    for (i = 0; i < N; i++) {
+      if (ink[i] || out[i] || sp[i]) continue;
+      nsp++; sp[i] = nsp; qh = 0; qt = 0; q[qt++] = i;
+      while (qh < qt) {
+        k = q[qh++]; kx = k % cw;
+        if (kx > 0 && !ink[k - 1] && !sp[k - 1]) { sp[k - 1] = nsp; q[qt++] = k - 1; }
+        if (kx < cw - 1 && !ink[k + 1] && !sp[k + 1]) { sp[k + 1] = nsp; q[qt++] = k + 1; }
+        if (k >= cw && !ink[k - cw] && !sp[k - cw]) { sp[k - cw] = nsp; q[qt++] = k - cw; }
+        if (k < N - cw && !ink[k + cw] && !sp[k + cw]) { sp[k + cw] = nsp; q[qt++] = k + cw; }
+      }
+    }
+    // a grid of 8 pt cells: 1 = outside, 2+ = a space, 0 = walls and furniture; saved as value.run pairs
+    var CELL = 8, cols = Math.ceil(W / CELL), rows = Math.ceil(H / CELL), runs = [], cur = -1, len = 0;
+    for (var ry = 0; ry < rows; ry++) for (var rx = 0; rx < cols; rx++) {
+      var votes = {}, tot = 0, o = 0;
+      for (var sy = Math.floor(ry * CELL * s); sy < Math.min(ch, Math.floor((ry + 1) * CELL * s)); sy++)
+        for (var sx = Math.floor(rx * CELL * s); sx < Math.min(cw, Math.floor((rx + 1) * CELL * s)); sx++) {
+          var kk = sy * cw + sx; tot++;
+          if (out[kk]) o++; else if (sp[kk]) votes[sp[kk]] = (votes[sp[kk]] || 0) + 1;
+        }
+      var v = 0, bestv = 0;
+      if (tot && o * 2 >= tot) v = 1;
+      else Object.keys(votes).forEach(function (lb) { if (votes[lb] > bestv) { bestv = votes[lb]; v = +lb; } });
+      if (v !== 1 && bestv * 4 < tot) v = 0;
+      if (v === cur) len++; else { if (len) runs.push(cur.toString(36) + '.' + len.toString(36)); cur = v; len = 1; }
+    }
+    runs.push(cur.toString(36) + '.' + len.toString(36));
+    return { shell: { x: R[0], y: R[1], cell: CELL, cols: cols, rows: rows, v: 2, grid: runs.join(',') }, core: core };
+  });
+}
+// A layout saved before shells were read: read the shell from its uploaded PDF and save it (seating untouched).
+function backfillShell(db) {
+  if (!LAYOUT || LAYOUT.shell || !LAYOUT.desks || !LAYOUT.desks.length || !db) return;
+  db.collection('layouts').get().then(function (snap) {
+    var recs = snap.docs.map(function (d) { return d.data(); }).filter(function (r) { return r && r.asset && /[.]pdf$/i.test(r.name || ''); })
+      .sort(function (a, b) { return String(b.at || '').localeCompare(String(a.at || '')); });
+    if (!recs.length) return;
+    var url = '/_blob/' + recs[0].asset; if (window.__blobUrl) url = window.__blobUrl(url);
+    var lib;
+    return loadPdf().then(function (l) { lib = l; return fetch(url); }).then(function (r) { if (!r.ok) throw { code: 'fetch' }; return r.arrayBuffer(); })
+      .then(function (buf) { return lib.getDocument({ data: new Uint8Array(buf) }).promise; })
+      .then(function (pdf) { return pdf.getPage(1); })
+      .then(function (pg) { return buildingShell(pg, LAYOUT.extent); })
+      .then(function (res) {
+        LAYOUT.shell = res.shell; LAYOUT.core = res.core;
+        if (window.__shellReady) window.__shellReady();
+        return db.doc('plan/current').update({ shell: res.shell, core: res.core });
+      });
+  }).catch(function () {});
+}
 // a new floor makes the old seat numbers meaningless: clear names, seats and moves of the drawn teams; keep added teams
 function clearOldSeating(db) {
   var cols = ['names', 'teams', 'need', 'moves', 'assign', 'deleted', 'gone', 'flags', 'pseat', 'pkind'], p = Promise.resolve();
@@ -603,8 +722,11 @@ window.__autoLayout = function (file, db, recId) {
       var D = findDesks(S);
       if (D.length < 2) throw { code: 'nodesks' };
       L = buildLayout(D, file.name);
-      lnote('Found ' + D.length + ' desks. Drawing the plan…', true);
-      return planPicture(page, L.extent);
+      lnote('Found ' + D.length + ' desks. Reading the building outline…', true);
+      return buildingShell(page, L.extent).then(function (res) { L.shell = res.shell; L.core = res.core; }, function () {}).then(function () {
+        lnote('Found ' + D.length + ' desks. Drawing the plan…', true);
+        return planPicture(page, L.extent);
+      });
     })
     .then(function (png) { return window.claude.use('assets').then(function (a) { if (!a) throw { code: 'not_granted' }; return a.upload(png, { type: 'image/png' }); }); })
     .then(function (up) {
@@ -902,6 +1024,7 @@ function MAIN() {
       snap.docs.forEach(function (doc) { var b = doc.data(); if (b && b.on) n[doc.id] = true; });
       store.deleted = n; relayout();
     }, function () {});
+    setTimeout(function () { backfillShell(d); }, 1500);
     d.collection('ptype').onSnapshot(function (snap) {
       var n = {};
       snap.docs.forEach(function (doc) { var b = doc.data(); if (b && b.t) n[doc.id] = String(b.t); });
@@ -1144,9 +1267,19 @@ function MAIN() {
     var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     desks.forEach(function (d) { var x = +d.dataset.x, y = +d.dataset.y; x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + +d.dataset.w); y1 = Math.max(y1, y + +d.dataset.h); });
     var cs = desks.map(ctr), cx = cs.reduce(function (s, q) { return s + q.x; }, 0) / cs.length, cy = cs.reduce(function (s, q) { return s + q.y; }, 0) / cs.length;
+    var tx, ty, L;
+    // with the building's outline: just outside the facade nearest the team, or, when no facade is near
+    // (the core or other rooms in between), inside the core on the side facing the team
+    var sp = SHELL && shellSpot(x0, y0, x1, y1, cx, cy, desks);
+    if (sp) {
+      g.setAttribute('transform', 'translate(' + (sp.x - b.x).toFixed(1) + ' ' + (sp.y - b.y).toFixed(1) + ')');
+      setLabels(g, sp.side === 'N');
+      PLACED.push({ g: g, lead: lead, side: sp.side, x: sp.x, y: sp.y, b: b, L: sp.L });
+      if (lead) { ['x1', 'y1', 'x2', 'y2'].forEach(function (k, i) { lead.setAttribute(k, sp.L[i].toFixed(1)); }); lead.style.display = ''; }
+      return;
+    }
     // side = building edge nearest the team's centre
     var dN = cy - EXT[1], dS = EXT[3] - cy, dW = cx - EXT[0], dE = EXT[2] - cx, m = Math.min(dN, dS, dW, dE);
-    var tx, ty, L;
     if (m > 400) { tx = x0 - 100; ty = cy; L = [tx + 47, ty, x0, ty]; }
     else if (m === dN) { tx = cx; ty = EXT[1] - 60; L = [tx, ty + 32, tx, y0]; }
     else if (m === dS) { tx = cx; ty = EXT[3] + 70; L = [tx, ty - 32, tx, y1]; }
@@ -1158,6 +1291,93 @@ function MAIN() {
     if (lead) { ['x1', 'y1', 'x2', 'y2'].forEach(function (k, i) { lead.setAttribute(k, L[i].toFixed(1)); }); lead.style.display = ''; }
   }
   var PLACED = [];
+  // the building outline (outside cells) and core from the layout, when it was read
+  var SHELL = null, CORE = null;
+  function readShell() {
+    SHELL = null; CORE = LAYOUT && LAYOUT.core ? LAYOUT.core : null;
+    var sh = LAYOUT && LAYOUT.shell; if (!sh || !sh.grid) return;
+    var grid = new Int32Array(sh.cols * sh.rows), pos = 0;
+    String(sh.grid).split(',').forEach(function (pr) { var a = pr.split('.'), v = parseInt(a[0], 36) || 0, n = parseInt(a[1], 36) || 0; if (v) grid.fill(v, pos, Math.min(grid.length, pos + n)); pos += n; });
+    var size = {}; for (var i = 0; i < grid.length; i++) if (grid[i] >= 2) size[grid[i]] = (size[grid[i]] || 0) + 1;
+    SHELL = { x: sh.x, y: sh.y, cell: sh.cell, cols: sh.cols, rows: sh.rows, g: grid, size: size };
+    // desks and their chairs are furniture: cells within about 30 pt of a desk can always be crossed
+    var near = new Uint8Array(grid.length);
+    document.querySelectorAll('#desks .dk').forEach(function (d) {
+      var x0 = +d.dataset.x - 30, y0 = +d.dataset.y - 30, x1 = +d.dataset.x + +d.dataset.w + 30, y1 = +d.dataset.y + +d.dataset.h + 30;
+      for (var cy = Math.max(0, Math.floor((y0 - sh.y) / sh.cell)); cy <= Math.min(sh.rows - 1, Math.floor((y1 - sh.y) / sh.cell)); cy++)
+        for (var cx = Math.max(0, Math.floor((x0 - sh.x) / sh.cell)); cx <= Math.min(sh.cols - 1, Math.floor((x1 - sh.x) / sh.cell)); cx++) near[cy * sh.cols + cx] = 1;
+    });
+    SHELL.near = near;
+  }
+  readShell();
+  window.__shellReady = function () { readShell(); relayout(); };
+  function cellAt(x, y) {
+    var cx = Math.floor((x - SHELL.x) / SHELL.cell), cy = Math.floor((y - SHELL.y) / SHELL.cell);
+    if (cx < 0 || cy < 0 || cx >= SHELL.cols || cy >= SHELL.rows) return 1;
+    return SHELL.g[cy * SHELL.cols + cx];
+  }
+  function nearDesk(x, y) {
+    var cx = Math.floor((x - SHELL.x) / SHELL.cell), cy = Math.floor((y - SHELL.y) / SHELL.cell);
+    return cx >= 0 && cy >= 0 && cx < SHELL.cols && cy < SHELL.rows && SHELL.near[cy * SHELL.cols + cx] === 1;
+  }
+  function inCore(x, y) { return !!CORE && x > CORE[0] && x < CORE[2] && y > CORE[1] && y < CORE[3]; }
+  // the spaces a team sits in: the rooms / open space right around its desks
+  function spacesOf(desks) {
+    var cnt = {}, top = 0, own = {};
+    desks.forEach(function (d) {
+      var x = +d.dataset.x, y = +d.dataset.y, w = +d.dataset.w, h = +d.dataset.h;
+      for (var ax = x - 24; ax <= x + w + 24; ax += 8) for (var ay = y - 24; ay <= y + h + 24; ay += 8) {
+        var v = cellAt(ax, ay); if (v >= 2) cnt[v] = (cnt[v] || 0) + 1;
+      }
+    });
+    Object.keys(cnt).forEach(function (k) { if (cnt[k] > top) top = cnt[k]; });
+    Object.keys(cnt).forEach(function (k) { if (cnt[k] >= top * 0.2) own[k] = true; });
+    return own;
+  }
+  // from a desk, walk outwards through the team's own space (and furniture) until outside the building;
+  // null when another room or the core is in the way, or the facade is more than about 16 m away
+  // Big spaces (about 40 m² and more) are open space, even when a thin line (a dimension) splits them: they can be
+  // crossed. Rooms and small enclosed areas block the way once the walk has gone about 50 pt through them.
+  var OPEN_CELLS = 2000;
+  function walkOut(x, y, dx, dy, own) {
+    var blocked = 0;
+    for (var d = 0; d <= 900; d += 6) {
+      var px = x + dx * d, py = y + dy * d;
+      if (inCore(px, py)) return null;
+      var v = cellAt(px, py);
+      if (v === 1) return { d: d, x: px, y: py };
+      if (v >= 2 && !own[v] && (SHELL.size[v] || 0) < OPEN_CELLS && d > 48 && !nearDesk(px, py) && ++blocked >= 8) return null;
+    }
+    return null;
+  }
+  function shellSpot(x0, y0, x1, y1, cx, cy, desks) {
+    var best = null, own = spacesOf(desks);
+    [['N', 0, -1], ['S', 0, 1], ['W', -1, 0], ['E', 1, 0]].forEach(function (dir) {
+      desks.forEach(function (dk) {
+        var x = +dk.dataset.x, y = +dk.dataset.y, w = +dk.dataset.w, h = +dk.dataset.h;
+        var sx = dir[1] ? (dir[1] < 0 ? x : x + w) : x + w / 2, sy = dir[2] ? (dir[2] < 0 ? y : y + h) : y + h / 2;
+        var hit = walkOut(sx, sy, dir[1], dir[2], own);
+        if (hit && (!best || hit.d < best.d)) best = { d: hit.d, x: hit.x, y: hit.y, side: dir[0], sx: sx, sy: sy };
+      });
+    });
+    if (best) {
+      // right outside the facade where the walk came out, with the line back to that desk
+      var m = best.side, tx, ty, L;
+      if (m === 'N') { tx = best.x; ty = best.y - 60; L = [tx, ty + 32, tx, best.sy]; }
+      else if (m === 'S') { tx = best.x; ty = best.y + 70; L = [tx, ty - 32, tx, best.sy]; }
+      else if (m === 'W') { tx = best.x - 100; ty = best.y; L = [tx + 60, ty, best.sx, ty]; }
+      else { tx = best.x + 100; ty = best.y; L = [tx - 60, ty, best.sx, ty]; }
+      return { side: m, x: tx, y: ty, L: L };
+    }
+    if (!CORE) return null;
+    // interior team: inside the core, on the core side facing the team
+    var C = CORE, gaps = [['W', C[0] - x1], ['E', x0 - C[2]], ['N', C[1] - y1], ['S', y0 - C[3]]].sort(function (a, b2) { return b2[1] - a[1]; });
+    var face = gaps[0][0], clx = Math.max(C[0] + 110, Math.min(C[2] - 110, cx)), cly = Math.max(C[1] + 90, Math.min(C[3] - 90, cy));
+    if (face === 'W') return { side: 'I', x: C[0] + 110, y: cly, L: [C[0] + 110 + 60, cly, x0, cly] };
+    if (face === 'E') return { side: 'I', x: C[2] - 110, y: cly, L: [C[2] - 110 - 60, cly, x1, cly] };
+    if (face === 'N') return { side: 'I', x: clx, y: C[1] + 90, L: [clx, C[1] + 90 + 32, clx, y0] };
+    return { side: 'I', x: clx, y: C[3] - 90, L: [clx, C[3] - 90 - 32, clx, y1] };
+  }
   // keep markers on the same side from overlapping: spread them along that side
   function spreadMarkers() {
     var sides = { N: [], S: [], W: [], E: [] };
