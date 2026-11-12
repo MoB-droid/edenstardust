@@ -239,6 +239,9 @@ main > section.stack.dropping { outline: 3px dashed var(--btn); outline-offset: 
 main > section.stack.dropping::after { content: attr(data-drop); position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 20; pointer-events: none;
   max-width: 90%; text-align: center; font: 600 18px var(--display); color: var(--btn-ink); background: var(--btn); padding: 12px 18px; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
 main > section.stack:first-child.dropping .planwrap { opacity: .5; }
+/* unused desk (no team holds it): white, desk outline only */
+.dk.free:not(.hi):not(.th):not(.ts):not(.drop) rect { fill: var(--plan); fill-opacity: 1; stroke: var(--desk-edge); stroke-width: 1.4; }
+.dk.free:not(.hi):not(.th):not(.ts) text { fill: var(--muted); }
 </style>
 <main>
   <section class="stack">
@@ -1152,7 +1155,7 @@ function MAIN() {
     PLACED = [];
     syncAdded();
     var any = false, claim = {}, homeUsed = {}, deskName = {};
-    allDesks.forEach(function (d) { d.classList.remove('ov', 'empty', 'mv'); });
+    allDesks.forEach(function (d) { d.classList.remove('ov', 'empty', 'mv', 'free'); });
     document.querySelectorAll('tr.m.unused, tr.m.pgone').forEach(function (r) { r.classList.remove('unused', 'pgone'); });
     // Team numbers shown on screen skip deleted teams (T1, T2, … with no gaps).
     var shownNo = 0, shortList = [], noOf = {};
@@ -1244,7 +1247,7 @@ function MAIN() {
     allDesks.forEach(function (d) {
       var c = claim[d.dataset.s];
       if (c && c.length > 1) { d.classList.remove('mv'); d.classList.add('ov'); }
-      else if (!c && d.dataset.s in homeUsed) d.classList.add('empty');
+      else if (!c) d.classList.add('free');   // unused: white with the desk outline
     });
     spreadMarkers();
     paintShade();
