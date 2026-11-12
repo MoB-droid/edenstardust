@@ -1238,10 +1238,14 @@ function MAIN() {
   function leadBase(l) {
     if (l && !l.dataset.o) l.dataset.o = ['x1', 'y1', 'x2', 'y2'].map(function (k) { return l.getAttribute(k); }).join(' ');
   }
-  function setLabels(g, north) {
-    var b = markerBase(g), tn = g.querySelector('.tname'), sh = g.querySelector('.short');
-    if (tn) tn.setAttribute('y', (north ? b.y - 68 : b.y + 68).toFixed(1));
-    if (sh) sh.setAttribute('y', (north ? b.y - 122 : b.y + 122).toFixed(1));
+  // align: where the team name and "seats short" run from, so they stay off the building:
+  // 'start' = from the pill's left edge rightwards (east of the facade), 'end' = from its right edge leftwards
+  function setLabels(g, north, align) {
+    var b = markerBase(g), tn = g.querySelector('.tname'), sh = g.querySelector('.short'), r = g.querySelector('rect');
+    var rx = r ? +r.getAttribute('x') : b.x, rw = r ? +r.getAttribute('width') : 0, a = align || 'middle';
+    var lx = a === 'start' ? rx + 4 : a === 'end' ? rx + rw - 4 : b.x;
+    if (tn) { tn.setAttribute('y', (north ? b.y - 68 : b.y + 68).toFixed(1)); tn.setAttribute('x', lx.toFixed(1)); tn.style.textAnchor = a; }
+    if (sh) { sh.setAttribute('y', (north ? b.y - 122 : b.y + 122).toFixed(1)); sh.setAttribute('x', lx.toFixed(1)); sh.style.textAnchor = a; }
   }
   function resetMarker(g, lead) {
     g.removeAttribute('transform');
@@ -1262,7 +1266,7 @@ function MAIN() {
     var sp = SHELL && shellSpot(x0, y0, x1, y1, cx, cy, desks);
     if (sp) {
       g.setAttribute('transform', 'translate(' + (sp.x - b.x).toFixed(1) + ' ' + (sp.y - b.y).toFixed(1) + ')');
-      setLabels(g, sp.side === 'N');
+      setLabels(g, sp.side === 'N', sp.align);
       PLACED.push({ g: g, lead: lead, side: sp.side, x: sp.x, y: sp.y, b: b, L: sp.L });
       if (lead) { ['x1', 'y1', 'x2', 'y2'].forEach(function (k, i) { lead.setAttribute(k, sp.L[i].toFixed(1)); }); lead.style.display = ''; }
       return;
@@ -1280,6 +1284,20 @@ function MAIN() {
     if (lead) { ['x1', 'y1', 'x2', 'y2'].forEach(function (k, i) { lead.setAttribute(k, L[i].toFixed(1)); }); lead.style.display = ''; }
   }
   var PLACED = [];
+  // the drawing area grows to show every marker and team name in full (not while a marker is being dragged)
+  var VB0 = plan.getAttribute('viewBox').split(' ').map(Number);
+  function fitView() {
+    if (dragT) return;
+    var b = null;
+    try { b = document.getElementById('teams').getBBox(); } catch (e) {}
+    var v = VB0.slice();
+    if (b && b.width) {
+      var x0 = Math.min(v[0], b.x - 30), y0 = Math.min(v[1], b.y - 30), x1 = Math.max(v[0] + v[2], b.x + b.width + 30), y1 = Math.max(v[1] + v[3], b.y + b.height + 30);
+      v = [x0, y0, x1 - x0, y1 - y0];
+    }
+    var s = v.map(function (n) { return Math.round(n); }).join(' ');
+    if (plan.getAttribute('viewBox') !== s) { plan.setAttribute('viewBox', s); if (window.__applyZoom) window.__applyZoom(); }
+  }
   // the building outline (outside cells) and core from the layout, when it was read
   var SHELL = null, CORE = null;
   function readShell() {
@@ -1356,14 +1374,14 @@ function MAIN() {
       else if (m === 'S') { tx = best.x; ty = best.y + 70; L = [tx, ty - 32, tx, best.sy]; }
       else if (m === 'W') { tx = best.x - 100; ty = best.y; L = [tx + 60, ty, best.sx, ty]; }
       else { tx = best.x + 100; ty = best.y; L = [tx - 60, ty, best.sx, ty]; }
-      return { side: m, x: tx, y: ty, L: L };
+      return { side: m, x: tx, y: ty, L: L, align: m === 'E' ? 'start' : m === 'W' ? 'end' : 'middle' };
     }
     if (!CORE) return null;
     // interior team: inside the core, on the core side facing the team
     var C = CORE, gaps = [['W', C[0] - x1], ['E', x0 - C[2]], ['N', C[1] - y1], ['S', y0 - C[3]]].sort(function (a, b2) { return b2[1] - a[1]; });
     var face = gaps[0][0], clx = Math.max(C[0] + 110, Math.min(C[2] - 110, cx)), cly = Math.max(C[1] + 90, Math.min(C[3] - 90, cy));
-    if (face === 'W') return { side: 'I', x: C[0] + 110, y: cly, L: [C[0] + 110 + 60, cly, x0, cly] };
-    if (face === 'E') return { side: 'I', x: C[2] - 110, y: cly, L: [C[2] - 110 - 60, cly, x1, cly] };
+    if (face === 'W') return { side: 'I', x: C[0] + 110, y: cly, L: [C[0] + 110 + 60, cly, x0, cly], align: 'start' };
+    if (face === 'E') return { side: 'I', x: C[2] - 110, y: cly, L: [C[2] - 110 - 60, cly, x1, cly], align: 'end' };
     if (face === 'N') return { side: 'I', x: clx, y: C[1] + 90, L: [clx, C[1] + 90 + 32, clx, y0] };
     return { side: 'I', x: clx, y: C[3] - 90, L: [clx, C[3] - 90 - 32, clx, y1] };
   }
@@ -1539,6 +1557,7 @@ function MAIN() {
       else if (!c) d.classList.add('free');   // unused: white with the desk outline
     });
     spreadMarkers();
+    fitView();
     paintShade();
     // a selected person (orange row) and a selected desk follow the person to their desk now
     document.querySelectorAll('#desks .dk.ts').forEach(function (d) { d.classList.remove('ts'); });
