@@ -1233,6 +1233,30 @@ function MAIN() {
   })();
   // A single desk touches no other desk (a bench of one). A person "sits at a single desk" when the program gives
   // their type as S, M or C, or (no type given) when they sat at a single desk when the team last moved or Suggest ran.
+  // leave out benches the team does not need: while the other benches still hold everyone, drop the last-listed one
+  function pruneBenches(list, n, size) {
+    var out = list.slice(), tot = out.reduce(function (s, i) { return s + size(i); }, 0), changed = true;
+    while (changed && out.length > 1) {
+      changed = false;
+      for (var k = out.length - 1; k >= 0; k--) if (tot - size(out[k]) >= n) { tot -= size(out[k]); out.splice(k, 1); changed = true; break; }
+    }
+    return out;
+  }
+  // a moved team takes the benches nearest the drop point, filling each bench before the next (rule 5)
+  function benchFill(pt, n) {
+    if (n <= 0) return [];
+    var bs = []; BENCH.forEach(function (b, i) { if (b.desks.length > 1) bs.push(i); });
+    bs.sort(function (a, b) { return Math.hypot(BENCH[a].x - pt.x, BENCH[a].y - pt.y) - Math.hypot(BENCH[b].x - pt.x, BENCH[b].y - pt.y); });
+    var pickB = [], tot = 0;
+    for (var k0 = 0; k0 < bs.length && tot < n; k0++) { pickB.push(bs[k0]); tot += BENCH[bs[k0]].desks.length; }
+    bs = pruneBenches(pickB, n, function (i) { return BENCH[i].desks.length; });
+    var out = [];
+    for (var k = 0; k < bs.length && out.length < n; k++) {
+      var ds = BENCH[bs[k]].desks.slice().sort(function (a, b) { var A = ctr(a), B = ctr(b); return Math.hypot(A.x - pt.x, A.y - pt.y) - Math.hypot(B.x - pt.x, B.y - pt.y); });
+      out = out.concat(ds.slice(0, n - out.length));
+    }
+    return out;
+  }
   function isSingleDesk(d) { return !!d && !!BENCH[+d.dataset.bench] && BENCH[+d.dataset.bench].desks.length === 1; }
   function rowSingle(id) { var ty = store.ptype[id]; if (ty) return ty !== 'OS'; return !!store.pkind[id]; }
   // remember who sits at a single desk now (people with a program type keep it); returns undo entries
@@ -1505,7 +1529,7 @@ function MAIN() {
           return (Math.pow(A.x - mv.x, 2) + Math.pow(A.y - mv.y, 2)) - (Math.pow(B.x - mv.x, 2) + Math.pow(B.y - mv.y, 2));
         });
         var nS = rows.filter(function (r, i) { return i < need && !store.pseat[r.dataset.s] && rowSingle(r.dataset.s); }).length;
-        mine = byDist.filter(isSingleDesk).slice(0, nS).concat(byDist.filter(function (d) { return !isSingleDesk(d); }).slice(0, need - Math.min(nS, need)));
+        mine = byDist.filter(isSingleDesk).slice(0, nS).concat(benchFill(mv, need - Math.min(nS, need)));
         if (mine.length < need) mine = mine.concat(byDist.filter(function (d) { return mine.indexOf(d) < 0; }).slice(0, need - mine.length));
         if (dragT === t) {
           // while dragging, the marker follows the pointer
@@ -1726,6 +1750,8 @@ function MAIN() {
   // Rule 1 (no overlaps): teams that were dragged keep the desks nearest their drop point; any team pushed off
   // its desks moves to the nearest free benches, and so on, until no desk has two teams.
   // Rule 2 (no mixing): a bench belongs to one team only; a team's leftover desks on its bench stay empty.
+  // Rule 4 (keep the team together): a team is placed as one compact group of benches, not scattered (see groupNear).
+  // Rule 5 (fill the bench): a team fills each bench before starting another; nobody sits alone on a new bench (byBench).
   function suggest() {
     var taken = {}, res = {}, short = [];
     function dist(a, b) { return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2)); }
@@ -1745,6 +1771,55 @@ function MAIN() {
     }
     // single-desk people (sNeed) get single desks near the team; everyone else gets connected desks (benches of 2+)
     function isOne(i) { return BENCH[i].desks.length === 1; }
+    // Rule 5 (fill the bench): a team fills each of its benches before using another; only one bench can be partly
+    // used, and its empty seats are the ones farthest from the rest of the team (so nobody sits alone on a new bench)
+    function byBench(list, n) {
+      if (!list.length || n <= 0) return [];
+      list = pruneBenches(list, n, function (i) { return BENCH[i].desks.length; });
+      var all = []; list.forEach(function (i) { all = all.concat(BENCH[i].desks); });
+      var c = all.map(ctr), gc = { x: c.reduce(function (s, q) { return s + q.x; }, 0) / c.length, y: c.reduce(function (s, q) { return s + q.y; }, 0) / c.length };
+      var order = list.slice().sort(function (a, b) { return dist(gc, BENCH[a]) - dist(gc, BENCH[b]); }), out = [];
+      order.forEach(function (i) {
+        if (out.length >= n) return;
+        var ds = BENCH[i].desks.slice().sort(function (a, b) { return dist(gc, ctr(a)) - dist(gc, ctr(b)); });
+        out = out.concat(ds.slice(0, n - out.length));
+      });
+      return out;
+    }
+    // Rule 4 (keep the team together): grow the team bench by bench from its own desks (or from one of the ~10 free
+    // benches nearest its home), always taking the free bench closest to the desks it already has. Of these candidate
+    // groups, take the one whose desks are closest together; being a little farther from home matters less.
+    function cc(d) { return d._c || (d._c = ctr(d)); }
+    function groupNear(base, need, h) {
+      var baseDesks = []; base.forEach(function (i) { baseDesks = baseDesks.concat(BENCH[i].desks); });
+      var free = []; BENCH.forEach(function (b, i) { if (!(i in taken) && b.desks.length > 1) free.push(i); });
+      if (!free.length) return [];
+      var seeds = base.length ? [null] : free.slice().sort(function (a, b) { return dist(h, BENCH[a]) - dist(h, BENCH[b]); }).slice(0, 10);
+      var best = null;
+      seeds.forEach(function (seed) {
+        var sel = [], pts = baseDesks.map(cc), have = 0, used = {};
+        function add(i) { used[i] = 1; sel.push(i); BENCH[i].desks.forEach(function (d) { pts.push(cc(d)); }); have += BENCH[i].desks.length; }
+        if (seed !== null) add(seed);
+        while (have < need) {
+          var bi = -1, bs = Infinity, left = need - have;
+          free.forEach(function (i) {
+            if (used[i]) return;
+            var b = BENCH[i], gd = Infinity;
+            if (pts.length) pts.forEach(function (q) { var dd = Math.sqrt(Math.pow(q.x - b.x, 2) + Math.pow(q.y - b.y, 2)); if (dd < gd) gd = dd; });
+            else gd = dist(h, b);
+            var sc = gd + 60 * Math.max(0, b.desks.length - left) + (b.desks.length < left ? 40 : 0);
+            if (sc < bs) { bs = sc; bi = i; }
+          });
+          if (bi < 0) break;
+          add(bi);
+        }
+        var cx = pts.reduce(function (s, q) { return s + q.x; }, 0) / pts.length, cy = pts.reduce(function (s, q) { return s + q.y; }, 0) / pts.length;
+        var spread = pts.reduce(function (s, q) { return s + Math.sqrt(Math.pow(q.x - cx, 2) + Math.pow(q.y - cy, 2)); }, 0) / pts.length;
+        var cost = 2 * spread + 0.5 * Math.sqrt(Math.pow(cx - h.x, 2) + Math.pow(cy - h.y, 2)) + 30 * Math.max(0, have - need) + (have < need ? 1e6 : 0);
+        if (!best || cost < best.cost) best = { cost: cost, sel: sel };
+      });
+      return best ? best.sel : [];
+    }
     function fill(t, n, keep) {
       var h = homeOf(t), nS = Math.min(n, sNeed[t] || 0), nO = n - nS;
       keep.forEach(function (i) { if (isOne(i) && taken[i] === t) delete taken[i]; });   // single desks are chosen again, near the team
@@ -1761,15 +1836,9 @@ function MAIN() {
         });
         return best;
       }
-      // connected desks first, one bench at a time
-      while (cap < nO) {
-        var b1 = pick(nO - cap, h, 'multi'); if (b1 < 0) break;
-        taken[b1] = t; got.push(b1); cap += BENCH[b1].desks.length;
-      }
-      var osDesks = [];
-      got.forEach(function (i) { osDesks = osDesks.concat(BENCH[i].desks); });
-      osDesks.sort(function (a, b) { return dist(h, ctr(a)) - dist(h, ctr(b)); });
-      osDesks = osDesks.slice(0, nO);
+      // connected desks first, as one compact group (rule 4)
+      if (cap < nO) groupNear(got, nO - cap, h).forEach(function (b1) { taken[b1] = t; got.push(b1); cap += BENCH[b1].desks.length; });
+      var osDesks = byBench(got, nO);
       // then the single desks nearest the team's connected desks
       var hc = osDesks.length ? (function () { var c = osDesks.map(ctr); return { x: c.reduce(function (s, q) { return s + q.x; }, 0) / c.length, y: c.reduce(function (s, q) { return s + q.y; }, 0) / c.length }; })() : h;
       var ones = [];
