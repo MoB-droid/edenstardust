@@ -193,6 +193,12 @@ main > section.stack { display: grid; gap: 10px; }
 .ctrl-left .undo { width: 100%; text-align: center; }
 .ctrl-right { display: grid; grid-template-columns: auto auto; gap: 8px; margin-left: auto; align-content: start; }
 .ctrl-right .undo { width: 100%; text-align: center; }
+.sheetwrap { position: relative; display: block; }
+#sheet { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheetmenu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 7; display: grid; min-width: 190px; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.16); overflow: hidden; }
+.sheetmenu button { font: 500 14px var(--display); text-align: left; background: none; border: 0; padding: 9px 12px; color: var(--fg); cursor: pointer; }
+.sheetmenu button:hover, .sheetmenu button:focus-visible { background: var(--btn-off); outline: none; }
+.sheetmenu .sm-name { padding: 8px 12px 4px; font: 500 12px var(--display); color: var(--muted); overflow-wrap: anywhere; }
 .btnrow { display: contents; }
 #suggest, #undo { margin-top: 19px; }
 .btnrow .undo { padding: 5px 12px; }
@@ -283,6 +289,7 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
         <input type="file" id="layfile" accept=".pdf,.png,.jpg,.jpeg" hidden>
         <div class="btnrow"><button type="button" id="upload" class="undo tip" data-tip="add teams from an Excel or CSV file" aria-label="Upload program">Upload program</button><button type="button" id="exp-xlsx" class="undo tip" data-tip="save the program as an Excel file" aria-label="Export program">Export</button></div>
         <input type="file" id="upfile" accept=".csv,.xlsx,.xls,.txt" hidden>
+        <div class="btnrow"><span class="sheetwrap"><button type="button" id="sheet" class="undo tip" data-tip="take the program from a Google Sheet (it stays linked)" aria-label="Link a Google Sheet">Link sheet</button></span><button type="button" id="sheet-up" class="undo tip" data-tip="update the program from the linked Google Sheet" aria-label="Update from the Google Sheet" hidden>Update</button></div>
       </div>
     </div>
     <p class="saveerr" id="laymsg" hidden></p>
@@ -938,11 +945,15 @@ function MAIN() {
   function paint() {
     setTimeout(function () { paintTotal(); if (window.__relayout) window.__relayout(); }, 0);
     paintFlags();
-    document.querySelectorAll('.ed').forEach(function (c) {
-      if (!c.querySelector('input')) { var v0 = store[c.dataset.k][c.dataset.id] || c.dataset.def || ''; c.textContent = c.dataset.k === 'need' ? v0 : cap(v0); }
-    });
+    paintEds();
     paintDeskNames();
     paintTeamNames();
+  }
+  // the editable cells (team names, people's names, seats needed) show what is saved
+  function paintEds() {
+    document.querySelectorAll('.ed').forEach(function (c) {
+      if (!c.querySelector('input')) { var v0 = store[c.dataset.k][c.dataset.id] || c.dataset.def || ''; var s0 = c.dataset.k === 'need' ? v0 : cap(v0); if (c.textContent !== s0) c.textContent = s0; }
+    });
   }
   // names on desks: the person who sits at each desk now (from the program rows), else a name typed for that seat
   var DESKNAME = null;
@@ -1446,6 +1457,7 @@ function MAIN() {
   function relayout() {
     PLACED = [];
     syncAdded();
+    paintEds();   // rows made just now (e.g. while the plan is loading) get their names
     var any = false, claim = {}, homeUsed = {}, deskName = {};
     allDesks.forEach(function (d) { d.classList.remove('ov', 'empty', 'mv', 'free'); });
     document.querySelectorAll('tr.m.unused, tr.m.pgone').forEach(function (r) { r.classList.remove('unused', 'pgone'); });
@@ -1933,7 +1945,8 @@ function MAIN() {
   if (window.claude && window.claude.use) window.claude.use('db').then(function (d) {
     if (!d) return;
     d.collection('meta').onSnapshot(function (snap) {
-      var v = null; snap.docs.forEach(function (doc) { var b = doc.data(); if (doc.id === 'title' && b && b.name) v = String(b.name); });
+      var v = null, sh = null; snap.docs.forEach(function (doc) { var b = doc.data(); if (doc.id === 'title' && b && b.name) v = String(b.name); if (doc.id === 'sheet' && b && b.id) sh = b; });
+      if (window.__setSheetMeta) window.__setSheetMeta(sh);
       titleVal = v; paintTitle();
     }, function () {});
   });
@@ -2179,22 +2192,169 @@ function MAIN() {
       (res.ignored ? ' · ignored ' + res.ignored + ' rows' + (res.why ? ' (' + res.why + ')' : '') : '') +
       (nFlag ? ' · ⚠ ' + nFlag + ' to check' : '') + ' · from ' + fname + (how ? ' · ' + how : '') + '.');
   }
+  // read the tables of a file or a Google Sheet into teams (Claude first, else the column reader)
+  function readProgram(fname, sheets) {
+    if (!sheets.some(function (s) { return filled(s.rows).length; })) { showErr(fname + ' is empty.'); return Promise.resolve(null); }
+    progNote('Reading ' + fname + '…');
+    return aiRead(fname, sheets).then(function (res) {
+      var how = '';
+      if (!res || res.error || !res.teams.length) {
+        how = res && res.error === 'rate_limited' ? 'read without Claude (usage limit reached)' : 'read without Claude';
+        res = columnRead(sheets);
+      }
+      if (!res || !res.teams.length) { progNote(''); showErr('No teams found in ' + fname + '.'); return null; }
+      res.how = how; return res;
+    });
+  }
   upfile.addEventListener('change', function () {
     var file = upfile.files && upfile.files[0]; if (!file) return;
     readSheets(file).then(function (sheets) {
-      if (!sheets.some(function (s) { return filled(s.rows).length; })) { showErr('The file is empty.'); return; }
-      progNote('Reading ' + file.name + '…');
-      aiRead(file.name, sheets).then(function (res) {
-        var how = '';
-        if (!res || res.error || !res.teams.length) {
-          how = res && res.error === 'rate_limited' ? 'read without Claude (usage limit reached)' : 'read without Claude';
-          res = columnRead(sheets);
-        }
-        if (!res || !res.teams.length) { progNote(''); showErr('No teams found in ' + file.name + '.'); return; }
-        addProgram(res, file.name, how);
-      });
+      return readProgram(file.name, sheets).then(function (res) { if (res) addProgram(res, file.name, res.how); });
     }, function () { showErr('Could not read that file. Use .xlsx or .csv.'); });
   });
+
+  // ---- Google Sheet as the program: pick a sheet in Google's own picker; it stays linked and Update re-reads it.
+  // Teams that came from the sheet follow it: changed seats and people are updated, new teams added, teams no longer
+  // in the sheet removed. Teams added another way are left alone. Works on edenstardust.com (Google's scripts).
+  var GSHEET = { clientId: '151556140307-gftpb2fjte8g4kgjbdg1teh29dcgpe1b.apps.googleusercontent.com', apiKey: '', appId: '151556140307',
+    scope: 'https://www.googleapis.com/auth/drive.file' };
+  var sheetMeta = null, gToken = null, gTokenAt = 0, gClient = null;
+  var sheetBtn = document.getElementById('sheet'), sheetUp = document.getElementById('sheet-up');
+  function paintSheet() {
+    var on = !!(sheetMeta && sheetMeta.id);
+    sheetBtn.textContent = on ? 'Sheet: ' + sheetMeta.name : 'Link sheet';
+    sheetBtn.dataset.tip = on ? 'change or unlink the Google Sheet' : 'take the program from a Google Sheet (it stays linked)';
+    sheetBtn.title = on ? sheetMeta.name : '';
+    sheetUp.hidden = !on;
+  }
+  function onSite() { return !!window.__edenSb; }
+  function googleReady() {
+    return Promise.all([
+      window.google && window.google.accounts ? Promise.resolve() : loadScript('https://accounts.google.com/gsi/client'),
+      window.gapi ? Promise.resolve() : loadScript('https://apis.google.com/js/api.js')
+    ]).then(function () { return new Promise(function (ok) { window.gapi.load('picker', ok); }); });
+  }
+  // a Google access token for the files the user picks (asks only the first time)
+  function googleToken() {
+    if (gToken && Date.now() - gTokenAt < 50 * 60 * 1000) return Promise.resolve(gToken);
+    return new Promise(function (ok, bad) {
+      gClient = window.google.accounts.oauth2.initTokenClient({
+        client_id: GSHEET.clientId, scope: GSHEET.scope,
+        callback: function (r) { if (r && r.access_token) { gToken = r.access_token; gTokenAt = Date.now(); ok(gToken); } else bad({ code: 'denied' }); },
+        error_callback: function (e) { bad({ code: (e && e.type) || 'denied' }); }
+      });
+      gClient.requestAccessToken({ prompt: '' });
+    });
+  }
+  function gfetch(url) {
+    return fetch(url, { headers: { Authorization: 'Bearer ' + gToken } }).then(function (r) {
+      if (r.status === 401) { gToken = null; throw { code: 'expired' }; }
+      if (!r.ok) throw { code: 'http', status: r.status };
+      return r.json();
+    });
+  }
+  // every tab of the sheet as rows (the same shape a dropped Excel file gives)
+  function sheetTables(id) {
+    var base = 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(id);
+    return gfetch(base + '?fields=properties.title,sheets.properties.title').then(function (meta) {
+      var tabs = (meta.sheets || []).map(function (s) { return s.properties.title; });
+      var q = tabs.map(function (tab) { return 'ranges=' + encodeURIComponent("'" + tab.replace(/'/g, "''") + "'"); }).join('&');
+      return gfetch(base + '/values:batchGet?majorDimension=ROWS&' + q).then(function (v) {
+        return { title: (meta.properties && meta.properties.title) || 'Google Sheet',
+          sheets: (v.valueRanges || []).map(function (vr, i) { return { name: tabs[i], rows: vr.values || [] }; }) };
+      });
+    });
+  }
+  function sheetError(e) {
+    var c = e && e.code;
+    progNote('');
+    showErr(c === 'denied' || c === 'popup_closed' ? 'Google sign-in was closed. Press the button again to continue.'
+      : c === 'popup_failed_to_open' ? 'The Google window was blocked. Allow pop-ups for edenstardust.com and try again.'
+      : c === 'http' && (e.status === 403 || e.status === 404) ? 'The sheet could not be opened. Pick it again with "Sheet: … → Change sheet".'
+      : c === 'load' ? 'Google could not be reached. Check the connection and try again.'
+      : 'Could not read the Google Sheet. Try again.');
+  }
+  function saveSheetMeta(v) {
+    sheetMeta = v; paintSheet();
+    if (db) { var ref = db.collection('meta').doc('sheet'); (v ? ref.set(v) : ref.delete()).then(function () {}, function () {}); }
+  }
+  // bring the program in line with the sheet
+  function syncProgram(res, fname, how) {
+    var prev = (sheetMeta && sheetMeta.teams) || [], seen = {}, nSeats = 0, nPeople = 0, nNew = 0, nGone = 0;
+    batch(function () {
+      res.teams.forEach(function (g, gi) {
+        var n = Math.max(g.people.length, g.seats), t = null;
+        nSeats += n; nPeople += g.people.length;
+        var key = (g.name || '').toLowerCase();
+        prev.concat(addedIds()).forEach(function (x) { if (!t && !seen[x] && store.added[x] && !store.deleted[x] && (store.teams[x] || '').toLowerCase() === key) t = x; });
+        if (!t) { t = 'a' + Date.now().toString(36) + gi; saveAdded(t, { order: Date.now() + gi }); if (g.name) save('teams', t, g.name); nNew++; }
+        seen[t] = true;
+        var oldN = +(store.need[t] || 0);
+        save('need', t, String(n));
+        for (var i = 0; i < Math.max(n, oldN); i++) {
+          var id = t + '-' + (i + 1), nm = i < n ? (g.people[i] || '') : '', ty = i < n && g.types ? (g.types[i] || '') : '';
+          if ((store.names[id] || '') !== cap(nm)) save('names', id, nm);
+          if ((store.ptype[id] || '') !== ty) { pushStep([['ptype', id, store.ptype[id] || null]]); writePtype(id, ty || null); }
+        }
+        if ((store.flags[t] || '') !== (g.flag || '')) save('flags', t, g.flag || '');
+      });
+      prev.forEach(function (t) { if (!seen[t] && store.added[t] && !store.deleted[t]) { shade(t, false); saveDeleted(t, true); nGone++; } });
+      syncAdded(); paint(); relayout();
+      suggest();
+    });
+    showErr('');
+    var at = new Date();
+    saveSheetMeta({ id: sheetMeta.id, name: sheetMeta.name, url: sheetMeta.url || '', teams: Object.keys(seen), at: at.toISOString() });
+    progNote('Linked to ' + fname + ' (Google Sheet) · updated ' + at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' · ' +
+      res.teams.length + ' teams · ' + nSeats + ' seats' + (nPeople ? ' · ' + nPeople + ' people' : '') +
+      (nNew ? ' · ' + nNew + ' new' : '') + (nGone ? ' · ' + nGone + ' removed' : '') + (how ? ' · ' + how : '') + '.');
+  }
+  window.__syncProgram = function (res, name) { sheetMeta = sheetMeta || { id: 'test', name: name, teams: [] }; syncProgram(res, name, ''); };   // for tests
+  function updateFromSheet() {
+    if (!sheetMeta || !sheetMeta.id) return;
+    progNote('Reading ' + sheetMeta.name + ' from Google…');
+    return googleReady().then(googleToken).then(function () { return sheetTables(sheetMeta.id); }).then(function (tb) {
+      sheetMeta.name = tb.title;
+      return readProgram(tb.title, tb.sheets).then(function (res) { if (res) syncProgram(res, tb.title, res.how); });
+    }).catch(sheetError);
+  }
+  function pickSheet() {
+    if (!onSite()) { layNote('Linking a Google Sheet works on edenstardust.com.'); return; }
+    if (!GSHEET.apiKey) { layNote('Google Sheets linking is not switched on yet.'); return; }
+    googleReady().then(googleToken).then(function (token) {
+      var view = new window.google.picker.DocsView(window.google.picker.ViewId.SPREADSHEETS).setMode(window.google.picker.DocsViewMode.LIST);
+      new window.google.picker.PickerBuilder().addView(view).setOAuthToken(token).setDeveloperKey(GSHEET.apiKey).setAppId(GSHEET.appId)
+        .setTitle('Choose the program sheet').setCallback(function (d) {
+          if (d.action !== window.google.picker.Action.PICKED || !d.docs || !d.docs[0]) return;
+          var doc = d.docs[0];
+          var keep = sheetMeta && sheetMeta.teams ? sheetMeta.teams : [];
+          saveSheetMeta({ id: doc.id, name: doc.name, url: doc.url || '', teams: keep, at: '' });
+          updateFromSheet();
+        }).build().setVisible(true);
+    }).catch(sheetError);
+  }
+  function closeSheetMenu() { document.querySelectorAll('.sheetmenu').forEach(function (m) { m.remove(); }); }
+  sheetBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (document.querySelector('.sheetmenu')) return closeSheetMenu();
+    if (!sheetMeta || !sheetMeta.id) return pickSheet();
+    var m = document.createElement('div'); m.className = 'sheetmenu';
+    m.innerHTML = '<div class="sm-name"></div><button type="button" data-a="open">Open the sheet</button><button type="button" data-a="change">Change sheet</button><button type="button" data-a="unlink">Unlink (keep the program)</button>';
+    m.firstChild.textContent = sheetMeta.name;
+    m.addEventListener('click', function (ev) {
+      var a = ev.target.dataset && ev.target.dataset.a; if (!a) return;
+      closeSheetMenu();
+      if (a === 'open') window.open(sheetMeta.url || 'https://docs.google.com/spreadsheets/d/' + sheetMeta.id, '_blank', 'noopener');
+      else if (a === 'change') pickSheet();
+      else { saveSheetMeta(null); progNote('Unlinked from the Google Sheet. The program stays as it is.'); }
+    });
+    sheetBtn.parentNode.appendChild(m);
+    m.querySelector('button').focus();
+  });
+  document.addEventListener('click', function (e) { if (!e.target.closest('.sheetmenu, #sheet')) closeSheetMenu(); });
+  sheetUp.addEventListener('click', updateFromSheet);
+  window.__setSheetMeta = function (v) { sheetMeta = v; paintSheet(); };
+  paintSheet();
   // ---- Drag and drop: drop a floor plan (PDF / PNG / JPG) or a program (Excel / CSV) anywhere on the page.
   // The frame under the pointer lights up; the file type decides whether it is the layout or the program.
   var leftSec = document.querySelector('main > section.stack:first-child'), rightSec = document.querySelector('main > section.stack:last-child'), dropDepth = 0;
