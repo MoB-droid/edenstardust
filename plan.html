@@ -577,11 +577,11 @@ function planPicture(page, E) {
 }
 // a new floor makes the old seat numbers meaningless: clear names, seats and moves of the drawn teams; keep added teams
 function clearOldSeating(db) {
-  var cols = ['names', 'teams', 'need', 'moves', 'assign', 'deleted', 'gone', 'flags', 'pseat'], p = Promise.resolve();
+  var cols = ['names', 'teams', 'need', 'moves', 'assign', 'deleted', 'gone', 'flags', 'pseat', 'pkind'], p = Promise.resolve();
   cols.forEach(function (c) {
     p = p.then(function () { return db.collection(c).get(); }).then(function (snap) {
       var q = Promise.resolve();
-      snap.docs.forEach(function (d) { if (c === 'assign' || c === 'moves' || c === 'pseat' || /^[0-9]+(-x[0-9]+)?$/.test(d.id)) q = q.then(function () { return db.collection(c).doc(d.id).delete(); }); });
+      snap.docs.forEach(function (d) { if (c === 'assign' || c === 'moves' || c === 'pseat' || c === 'pkind' || /^[0-9]+(-x[0-9]+)?$/.test(d.id)) q = q.then(function () { return db.collection(c).doc(d.id).delete(); }); });
       return q;
     });
   });
@@ -770,11 +770,14 @@ function MAIN() {
     var to = p.over; if (!to) return;
     var from = p.d.dataset.s, other = rowOfDesk(to.dataset.s);
     if (other && (other === p.r || deskOfRow(other) !== to.dataset.s)) other = null;
-    var stp = [['pseat', p.r.dataset.s, clone(store.pseat[p.r.dataset.s])]];
+    var stp = [['pseat', p.r.dataset.s, clone(store.pseat[p.r.dataset.s])], ['pkind', p.r.dataset.s, store.pkind[p.r.dataset.s] ? 1 : null]];
+    if (other) stp.push(['pkind', other.dataset.s, store.pkind[other.dataset.s] ? 1 : null]);
     if (other) stp.push(['pseat', other.dataset.s, clone(store.pseat[other.dataset.s])]);
     pushStep(stp);
     writePseat(p.r.dataset.s, to.dataset.s);
     if (other) writePseat(other.dataset.s, from);
+    if (!store.ptype[p.r.dataset.s]) writePkind(p.r.dataset.s, isSingleDesk(to));
+    if (other && !store.ptype[other.dataset.s]) writePkind(other.dataset.s, isSingleDesk(p.d));
     relayout();
   });
   function deskClick(e) {
@@ -791,7 +794,7 @@ function MAIN() {
     var b = g.querySelector('.fold'); b.setAttribute('aria-expanded', open ? 'true' : 'false');
     g.querySelectorAll('tr.m').forEach(function (r) { r.hidden = !open; });
   }
-  var store = { names: {}, teams: {}, moves: {}, need: {}, deleted: {}, gone: {}, added: {}, assign: {}, flags: {}, pseat: {} }, db = null, LS = (window.__edenLS || "edits:Seat Plan");
+  var store = { names: {}, teams: {}, moves: {}, need: {}, deleted: {}, gone: {}, added: {}, assign: {}, flags: {}, pseat: {}, ptype: {}, pkind: {} }, db = null, LS = (window.__edenLS || "edits:Seat Plan");
   // Undo: every change pushes one step (a list of [collection, id, previous value]).
   var hist = [], undoing = false, HK = LS + ':undo';
   try { hist = JSON.parse(localStorage.getItem(HK) || '[]') || []; } catch (e) { hist = []; }
@@ -853,7 +856,7 @@ function MAIN() {
   }
   function paintTotal() {}
   function showErr(m) { var e = document.getElementById('saveerr'); e.textContent = m || ''; e.hidden = !m; alignProgram(); }
-  try { var ls = JSON.parse(localStorage.getItem(LS) || 'null'); if (ls && ls.names && ls.teams) { store = ls; if (!store.moves) store.moves = {}; if (!store.need) store.need = {}; if (!store.deleted) store.deleted = {}; if (!store.gone) store.gone = {}; if (!store.added) store.added = {}; if (!store.assign) store.assign = {}; if (!store.flags) store.flags = {}; if (!store.pseat) store.pseat = {}; } } catch (e) {}
+  try { var ls = JSON.parse(localStorage.getItem(LS) || 'null'); if (ls && ls.names && ls.teams) { store = ls; if (!store.moves) store.moves = {}; if (!store.need) store.need = {}; if (!store.deleted) store.deleted = {}; if (!store.gone) store.gone = {}; if (!store.added) store.added = {}; if (!store.assign) store.assign = {}; if (!store.flags) store.flags = {}; if (!store.pseat) store.pseat = {}; if (!store.ptype) store.ptype = {}; if (!store.pkind) store.pkind = {}; } } catch (e) {}
   paint();
   if (window.claude && window.claude.use) window.claude.use('db').then(function (d) {
     if (!d) return;
@@ -895,6 +898,16 @@ function MAIN() {
       var n = {};
       snap.docs.forEach(function (doc) { var b = doc.data(); if (b && b.on) n[doc.id] = true; });
       store.deleted = n; relayout();
+    }, function () {});
+    d.collection('ptype').onSnapshot(function (snap) {
+      var n = {};
+      snap.docs.forEach(function (doc) { var b = doc.data(); if (b && b.t) n[doc.id] = String(b.t); });
+      store.ptype = n; relayout();
+    }, function () {});
+    d.collection('pkind').onSnapshot(function (snap) {
+      var n = {};
+      snap.docs.forEach(function (doc) { var b = doc.data(); if (b && b.on) n[doc.id] = true; });
+      store.pkind = n; relayout();
     }, function () {});
     d.collection('need').onSnapshot(function (snap) {
       var n = {};
@@ -1061,6 +1074,24 @@ function MAIN() {
     out.forEach(function (b) { var c = b.desks.map(ctr); b.x = c.reduce(function (s, p) { return s + p.x; }, 0) / c.length; b.y = c.reduce(function (s, p) { return s + p.y; }, 0) / c.length; });
     return out;
   })();
+  // A single desk touches no other desk (a bench of one). A person "sits at a single desk" when the program gives
+  // their type as S, M or C, or (no type given) when they sat at a single desk when the team last moved or Suggest ran.
+  function isSingleDesk(d) { return !!d && !!BENCH[+d.dataset.bench] && BENCH[+d.dataset.bench].desks.length === 1; }
+  function rowSingle(id) { var ty = store.ptype[id]; if (ty) return ty !== 'OS'; return !!store.pkind[id]; }
+  // remember who sits at a single desk now (people with a program type keep it); returns undo entries
+  function captureKinds(teams) {
+    var stp = [];
+    teams.forEach(function (t) {
+      document.querySelectorAll('#srows tbody.grp[data-t="' + t + '"] tr.m').forEach(function (r) {
+        if (r.classList.contains('unused') || r.classList.contains('pgone') || store.ptype[r.dataset.s]) return;
+        var seat = deskOfRow(r), on = !!(seat && isSingleDesk(deskBy[seat]));
+        if (on === !!store.pkind[r.dataset.s]) return;
+        stp.push(['pkind', r.dataset.s, store.pkind[r.dataset.s] ? 1 : null]);
+        writePkind(r.dataset.s, on);
+      });
+    });
+    return stp;
+  }
   // Team markers always sit outside the floor plan (rule for drag and Suggest too): on the building side nearest
   // the team's desks, with a dashed line to them. Teams deep inside the building get their marker in the core,
   // 100 pt left of their desks.
@@ -1196,10 +1227,13 @@ function MAIN() {
         if (same) resetMarker(g, lead); else placeOutside(g, lead, mine);
       } else if (mv) {
         any = true;
-        mine = allDesks.slice().sort(function (a, b) {
+        var byDist = allDesks.slice().sort(function (a, b) {
           var A = ctr(a), B = ctr(b);
           return (Math.pow(A.x - mv.x, 2) + Math.pow(A.y - mv.y, 2)) - (Math.pow(B.x - mv.x, 2) + Math.pow(B.y - mv.y, 2));
-        }).slice(0, need);
+        });
+        var nS = rows.filter(function (r, i) { return i < need && !store.pseat[r.dataset.s] && rowSingle(r.dataset.s); }).length;
+        mine = byDist.filter(isSingleDesk).slice(0, nS).concat(byDist.filter(function (d) { return !isSingleDesk(d); }).slice(0, need - Math.min(nS, need)));
+        if (mine.length < need) mine = mine.concat(byDist.filter(function (d) { return mine.indexOf(d) < 0; }).slice(0, need - mine.length));
         if (dragT === t) {
           // while dragging, the marker follows the pointer
           var r0 = g.querySelector('rect'), hx = +r0.getAttribute('x') + +r0.getAttribute('width') / 2, hy = +r0.getAttribute('y') + 32;
@@ -1211,19 +1245,31 @@ function MAIN() {
         mine = own.slice(0, need);
       }
       // people dragged to a desk of their own (store.pseat) keep it; the others fill the team's desks in order
-      var ovSet = {};
-      rows.forEach(function (r, i) { var o = i < need && store.pseat[r.dataset.s]; if (o && deskBy[o]) ovSet[o] = 1; });
-      // everyone else keeps their own desk; only a person whose desk was taken by a mover gets a freed desk
-      var held = [], waiting = [], usedD = {};
+      // the others fill the team's desks in order: single-desk people (program type S / M / C, or seated at a single desk)
+      // take its single desks, everyone else its connected desks; a desk left over goes to whoever still has none
+      var held = [], usedD = {};
       rows.forEach(function (r, i) {
         r._desk = null; if (i >= need) return;
         var o = store.pseat[r.dataset.s];
-        if (o && deskBy[o]) { r._desk = deskBy[o]; usedD[o] = 1; return; }
-        var d = mine[i];
-        if (d && !ovSet[d.dataset.s]) { r._desk = d; usedD[d.dataset.s] = 1; } else waiting.push(r);
+        if (o && deskBy[o]) { r._desk = deskBy[o]; usedD[o] = 1; }
       });
-      var spare = mine.filter(function (d) { return !usedD[d.dataset.s]; });
-      waiting.forEach(function (r) { var d = spare.shift(); if (d) { r._desk = d; usedD[d.dataset.s] = 1; } });
+      var pend = rows.filter(function (r, i) { return i < need && !r._desk; });
+      function takeDesk(r, single) {
+        for (var k = 0; k < mine.length; k++) {
+          var d = mine[k]; if (usedD[d.dataset.s]) continue;
+          if (single !== undefined && isSingleDesk(d) !== single) continue;
+          r._desk = d; usedD[d.dataset.s] = 1; return;
+        }
+      }
+      // first everyone keeps their own place in the team's desk order (when it is the right kind of desk)
+      rows.forEach(function (r, i) {
+        if (i >= need || r._desk) return;
+        var d = mine[i];
+        if (d && !usedD[d.dataset.s] && isSingleDesk(d) === rowSingle(r.dataset.s)) { r._desk = d; usedD[d.dataset.s] = 1; }
+      });
+      pend = pend.filter(function (r) { return !r._desk; });
+      pend.forEach(function (r) { takeDesk(r, rowSingle(r.dataset.s)); });
+      pend.forEach(function (r) { if (!r._desk) takeDesk(r); });
       rows.forEach(function (r, i) { if (i < need && r._desk) held.push(r._desk); });
       if (rows.length < need) mine.slice(rows.length, need).forEach(function (d) { if (!usedD[d.dataset.s]) held.push(d); });
       mine.forEach(function (d) { if (held.indexOf(d) < 0 && d.dataset.t === t) homeUsed[d.dataset.s] = homeUsed[d.dataset.s] || false; });
@@ -1289,7 +1335,7 @@ function MAIN() {
     if (!ds) return;
     if (!ds.moving) {
       if (Math.abs(e.clientX - ds.sx) + Math.abs(e.clientY - ds.sy) < 6) return;
-      ds.moving = true; dragT = ds.t; ds.g.classList.add('drag');
+      ds.moving = true; ds.kinds = captureKinds([ds.t]); dragT = ds.t; ds.g.classList.add('drag');
     }
     e.preventDefault();
     var p = svgPt(e);
@@ -1305,7 +1351,7 @@ function MAIN() {
     justDragged = true; setTimeout(function () { justDragged = false; }, 300);
     d.g.classList.remove('drag');
     dragT = null;
-    var stp = [['moves', d.t, clone(d.prev)]];
+    var stp = [['moves', d.t, clone(d.prev)]].concat(d.kinds || []);
     if (d.prevAsg) { stp.push(['assign', d.t, clone(d.prevAsg)]); writeAssign(d.t, null); }
     // moving a team takes its people along: their personal desks are cleared
     document.querySelectorAll('#srows tbody.grp[data-t="' + d.t + '"] tr.m').forEach(function (r) { if (store.pseat[r.dataset.s]) { stp.push(['pseat', r.dataset.s, store.pseat[r.dataset.s]]); writePseat(r.dataset.s, null); } });
@@ -1352,6 +1398,20 @@ function MAIN() {
       (val ? ref.set({ s: String(val) }) : ref.delete()).then(function () {}, function () { showErr('Not saved. You may not have edit access to this page.'); });
     } else { try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {} }
   }
+  function writePkind(id, on) {
+    if (on) store.pkind[id] = true; else delete store.pkind[id];
+    if (db) {
+      var ref = db.collection('pkind').doc(String(id));
+      (on ? ref.set({ on: true }) : ref.delete()).then(function () {}, function () { showErr('Not saved. You may not have edit access to this page.'); });
+    } else { try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {} }
+  }
+  function writePtype(id, val) {
+    if (val) store.ptype[id] = val; else delete store.ptype[id];
+    if (db) {
+      var ref = db.collection('ptype').doc(String(id));
+      (val ? ref.set({ t: val }) : ref.delete()).then(function () {}, function () { showErr('Not saved. You may not have edit access to this page.'); });
+    } else { try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {} }
+  }
   function writeAssign(t, val) {
     if (val) store.assign[t] = val; else delete store.assign[t];
     if (db) {
@@ -1387,27 +1447,56 @@ function MAIN() {
       if (cur.length) { var c = cur.map(ctr); return { x: c.reduce(function (s, p) { return s + p.x; }, 0) / c.length, y: c.reduce(function (s, p) { return s + p.y; }, 0) / c.length }; }
       var r = document.querySelector('#teams .team[data-t="' + t + '"] rect'); return { x: +r.getAttribute('x') + +r.getAttribute('width') / 2, y: +r.getAttribute('y') + 32 };
     }
+    // single-desk people (sNeed) get single desks near the team; everyone else gets connected desks (benches of 2+)
+    function isOne(i) { return BENCH[i].desks.length === 1; }
     function fill(t, n, keep) {
-      var h = homeOf(t), got = keep.slice(), cap = got.reduce(function (s, i) { return s + BENCH[i].desks.length; }, 0);
-      // pick free benches one at a time
-      while (cap < n) {
-        var left = n - cap, best = -1, bs = Infinity;
+      var h = homeOf(t), nS = Math.min(n, sNeed[t] || 0), nO = n - nS;
+      keep.forEach(function (i) { if (isOne(i) && taken[i] === t) delete taken[i]; });   // single desks are chosen again, near the team
+      var got = keep.filter(function (i) { return !isOne(i); }), cap = got.reduce(function (s, i) { return s + BENCH[i].desks.length; }, 0);
+      function pick(left, h0, kind) {
+        var best = -1, bs = Infinity;
         BENCH.forEach(function (b, i) {
           if (i in taken) return;
+          if (kind === 'multi' && isOne(i)) return;
+          if (kind === 'one' && !isOne(i)) return;
           // nearest first; penalties for desks left empty and for splitting the team over several benches
-          var sc = dist(h, b) + 60 * Math.max(0, b.desks.length - left) + (b.desks.length < left ? 500 : 0);
+          var sc = dist(h0, b) + (kind === 'one' ? 0 : 60 * Math.max(0, b.desks.length - left) + (b.desks.length < left ? 500 : 0));
           if (sc < bs) { bs = sc; best = i; }
         });
-        if (best < 0) break;
-        taken[best] = t; got.push(best); cap += BENCH[best].desks.length;
+        return best;
       }
-      var desks = [];
-      got.forEach(function (i) { desks = desks.concat(BENCH[i].desks); });
-      desks.sort(function (a, b) { return dist(h, ctr(a)) - dist(h, ctr(b)); });
-      res[t] = desks.slice(0, n);
+      // connected desks first, one bench at a time
+      while (cap < nO) {
+        var b1 = pick(nO - cap, h, 'multi'); if (b1 < 0) break;
+        taken[b1] = t; got.push(b1); cap += BENCH[b1].desks.length;
+      }
+      var osDesks = [];
+      got.forEach(function (i) { osDesks = osDesks.concat(BENCH[i].desks); });
+      osDesks.sort(function (a, b) { return dist(h, ctr(a)) - dist(h, ctr(b)); });
+      osDesks = osDesks.slice(0, nO);
+      // then the single desks nearest the team's connected desks
+      var hc = osDesks.length ? (function () { var c = osDesks.map(ctr); return { x: c.reduce(function (s, q) { return s + q.x; }, 0) / c.length, y: c.reduce(function (s, q) { return s + q.y; }, 0) / c.length }; })() : h;
+      var ones = [];
+      while (ones.length < nS) { var b2 = pick(1, hc, 'one'); if (b2 < 0) break; taken[b2] = t; got.push(b2); ones.push(BENCH[b2].desks[0]); }
+      // not enough of one kind: take any free desks near the team
+      var all = osDesks.concat(ones), extra = [];
+      while (all.length + extra.length < n) {
+        var b3 = pick(n - all.length - extra.length, hc, 'any'); if (b3 < 0) break;
+        taken[b3] = t; got.push(b3); extra = extra.concat(BENCH[b3].desks);
+      }
+      extra.sort(function (a, b) { return dist(hc, ctr(a)) - dist(hc, ctr(b)); });
+      res[t] = all.concat(extra).slice(0, n);
       if (res[t].length < n) short.push(t);
     }
     var live = teamIds.filter(function (t) { return !store.deleted[t]; });
+    var kindSteps = captureKinds(live), sNeed = {};
+    live.forEach(function (t) {
+      var n = needFor(t), k = 0;
+      document.querySelectorAll('#srows tbody.grp[data-t="' + t + '"] tr.m').forEach(function (r) {
+        if (k >= n || r.classList.contains('pgone')) return; k++;
+        if (rowSingle(r.dataset.s)) sNeed[t] = (sNeed[t] || 0) + 1;
+      });
+    });
     var moved = live.filter(function (t) { return store.moves[t]; }), rest = live.filter(function (t) { return !store.moves[t]; });
     moved.forEach(function (t) { fill(t, needFor(t), []); });
     var pending = [];
@@ -1455,7 +1544,7 @@ function MAIN() {
     }
     short = live.filter(function (t) { return needs[t] > 0 && isShort(t); });
     // save: one undo step for the whole suggestion
-    var step = [];
+    var step = kindSteps.slice();
     live.forEach(function (t) { step.push(['assign', t, clone(store.assign[t])]); if (store.moves[t]) step.push(['moves', t, clone(store.moves[t])]); });
     var pIds = Object.keys(store.pseat); pIds.forEach(function (id) { step.push(['pseat', id, store.pseat[id]]); });
     pushStep(step);
@@ -1511,19 +1600,20 @@ function MAIN() {
   });
   document.getElementById('exp-xlsx').addEventListener('click', function () {
     closeExp();
-    var rows = [['Team', 'Team name', 'Seats needed', '#', 'Name', 'Seat']];
+    var rows = [['Team', 'Team name', 'Seats needed', '#', 'Name', 'Type', 'Seat']];
     document.querySelectorAll('#srows tbody.grp').forEach(function (g) {
       if (g.classList.contains('gone')) return;
-      rows.push([g.querySelector('.fold').textContent.trim(), g.querySelector('.tn').textContent.trim(), +(g.querySelector('.cnt').textContent || 0), '', '', '']);
+      rows.push([g.querySelector('.fold').textContent.trim(), g.querySelector('.tn').textContent.trim(), +(g.querySelector('.cnt').textContent || 0), '', '', '', '']);
       g.querySelectorAll('tr.m').forEach(function (r) {
         if (r.classList.contains('unused') || r.classList.contains('pgone')) return;
         var seat = r.children[2].textContent.trim();
-        rows.push(['', '', '', +r.children[0].textContent, r.children[1].textContent.trim(), /^[0-9]+$/.test(seat) ? +seat : seat]);
+        var ty = store.ptype[r.dataset.s] || (/^[0-9]+$/.test(seat) ? (isSingleDesk(deskBy[seat]) ? 'S' : 'OS') : '');
+        rows.push(['', '', '', +r.children[0].textContent, r.children[1].textContent.trim(), ty, /^[0-9]+$/.test(seat) ? +seat : seat]);
       });
     });
     loadXLSX().then(function (X) {
       var ws = X.utils.aoa_to_sheet(rows), wb = X.utils.book_new();
-      ws['!cols'] = [{ wch: 8 }, { wch: 24 }, { wch: 13 }, { wch: 5 }, { wch: 28 }, { wch: 7 }];
+      ws['!cols'] = [{ wch: 8 }, { wch: 24 }, { wch: 13 }, { wch: 5 }, { wch: 28 }, { wch: 6 }, { wch: 7 }];
       X.utils.book_append_sheet(wb, ws, 'Program');
       var out = X.write(wb, { bookType: 'xlsx', type: 'array' });
       offerFile(fileBase() + ' - program.xlsx', new Blob([out]));
@@ -1634,6 +1724,7 @@ function MAIN() {
   function kindOf(h) {
     h = String(h).trim().toLowerCase();
     if (!h) return null;
+    if (/(^|[^a-z])type([^a-z]|$)|kind|סוג/.test(h)) return 'ptype';
     if (/seat|count|headcount|size|capacity|member|people|employees|desks|places|מקומ|עמד|כמות|מספר עובדים|מס.? עובדים|תקן/.test(h)) return 'seats';
     if (/^(team *(#|no[.]?|num(ber)?|id)|#|מספר צוות|מס.? צוות)$/.test(h)) return 'team';
     if (/team|dep|group|unit|division|צוות|מחלק|יחיד|קבוצ|חטיב|אגף/.test(h)) return 'tname';
@@ -1649,11 +1740,16 @@ function MAIN() {
       numeric[i] = vals.length > 0 && nn >= 0.8 * vals.length; text[i] = vals.length > 0 && nn < 0.5 * vals.length;
     }
     var m = {}, hits = 0;
+    for (var ti = 0; ti < w; ti++) {
+      var tv = body.map(function (r) { return String(r[ti] === undefined ? '' : r[ti]).trim(); }).filter(Boolean);
+      if (tv.length && tv.every(function (v) { return /^(os|s|m|c)$/i.test(v); })) { m.ptype = ti; numeric[ti] = text[ti] = false; break; }
+    }
     first.forEach(function (c, i) {
       var k = kindOf(c); if (!k) return;
       if (k === 'person' && numeric[i]) k = 'seats';
       if (k === 'seats' && !numeric[i]) return;
-      if (m[k] === undefined) { m[k] = i; hits++; }
+      if (k === 'ptype' && m.ptype !== undefined && m.ptype !== i) return;
+      if (m[k] === undefined) { m[k] = i; hits++; } else if (k === 'ptype') hits++;
     });
     var header = hits > 0 || first.some(function (c, i) { return numeric[i] && String(c).trim() !== '' && !isNum(c); });
     // fill what the headers did not name, from the column contents
@@ -1667,6 +1763,8 @@ function MAIN() {
     return { m: m, header: header };
   }
   var SKIP = /^(total|sum|סה.?כ|סך הכל|סיכום|הערה)/i;
+  // seat type from the program: OS = connected desk; S, M, C = single desks
+  function normType(v) { v = String(v || '').trim().toUpperCase(); return /^(OS|S|M|C)$/.test(v) ? v : ''; }
 
   // ---- Upload program: Claude reads the whole file (every sheet, messy tables, notes, totals) and returns the teams.
   // They are added at once and Suggest runs; a team Claude was unsure about shows a ⚠ note. Without Claude, the
@@ -1713,6 +1811,7 @@ function MAIN() {
       '6. If several sheets hold the same data, use the most detailed one, once.',
       '7. flag: null, or a short English note (max 8 words) when something is unsure, e.g. "no seat count", "seats guessed from people", "possible duplicate of X", "mixed totals". Use seats 0 when there is no number and no people.',
       '8. Never invent teams, people or numbers.',
+      '9. If there is a type column (OS = open-space desk; S, M or C = single desk), also return "people_types": one of "OS", "S", "M", "C" or null for each person (same order as people), and "seat_types": {"OS": n, "S": n, "M": n, "C": n} for seats not tied to a listed person. Leave both out when there is no type column.',
       '', 'File: ' + name, '', text
     ].join('\n');
   }
@@ -1725,7 +1824,11 @@ function MAIN() {
         var teams = j.teams.map(function (t) {
           var people = Array.isArray(t && t.people) ? t.people.map(function (p) { return String(p).trim(); }).filter(function (p) { return p && !isNum(p); }) : [];
           var seats = Math.max(0, Math.min(2000, Math.round(+(t && t.seats) || 0)));
-          return { name: String((t && t.name) || '').trim().slice(0, 80), seats: seats, people: people, flag: t && t.flag ? String(t.flag).slice(0, 80) : '' };
+          var pt = Array.isArray(t && t.people_types) ? t.people_types.map(normType) : [], st = [];
+          var sc = t && t.seat_types && typeof t.seat_types === 'object' ? t.seat_types : {};
+          ['OS', 'S', 'M', 'C'].forEach(function (k) { for (var q = 0; q < Math.min(2000, Math.round(+sc[k] || 0)); q++) st.push(k); });
+          while (pt.length < people.length) pt.push('');
+          return { name: String((t && t.name) || '').trim().slice(0, 80), seats: seats, people: people, flag: t && t.flag ? String(t.flag).slice(0, 80) : '', types: pt.slice(0, people.length).concat(st), typesPeople: people.length };
         }).filter(function (t) { return t.name; });
         var ign = Array.isArray(j.ignored) ? j.ignored : [];
         return { teams: teams, ignored: ign.reduce(function (s, x) { return s + (Math.round(+(x && x.rows)) || 0); }, 0), why: ign.map(function (x) { return x && x.why ? String(x.why) : ''; }).filter(Boolean).slice(0, 4).join(', ') };
@@ -1742,13 +1845,15 @@ function MAIN() {
       var cell = function (k) { return m[k] === undefined ? '' : String(r[m[k]] === undefined ? '' : r[m[k]]).trim(); };
       var tn = cell('tname'), tid = cell('team'), key = (tn || tid).toLowerCase();
       if (!key || SKIP.test(key) || key.length > 60) { ign++; return; }
-      if (!byKey[key]) { byKey[key] = { name: tn || (isNaN(+tid) ? tid : ''), people: [], seats: 0, flag: '' }; groups.push(byKey[key]); }
+      if (!byKey[key]) { byKey[key] = { name: tn || (isNaN(+tid) ? tid : ''), people: [], seats: 0, flag: '', ptypes: [], stypes: [] }; groups.push(byKey[key]); }
       var g = byKey[key], pn = cell('person'), se = parseInt(cell('seats'), 10);
-      if (pn && !isNum(pn)) g.people.push(pn);
+      var ty = normType(cell('ptype'));
+      if (pn && !isNum(pn)) { g.people.push(pn); g.ptypes.push(ty); }
+      else if (se > 0 && ty) for (var q = 0; q < Math.min(se, 2000); q++) g.stypes.push(ty);
       // seats on person rows repeat the team size (keep the largest); on team rows they add up (a team split over rows)
       if (se > 0) g.seats = m.person !== undefined ? Math.max(g.seats, se) : g.seats + se;
     });
-    groups.forEach(function (g) { if (!g.seats && !g.people.length) g.flag = 'no seat count'; });
+    groups.forEach(function (g) { if (!g.seats && !g.people.length) g.flag = 'no seat count'; g.types = g.ptypes.concat(g.stypes); g.typesPeople = g.ptypes.length; });
     return { teams: groups, ignored: ign, why: ign ? 'totals, notes or empty' : '' };
   }
   function progNote(t) { var p = document.getElementById('prognote'); p.textContent = t || ''; p.hidden = !t; }
@@ -1767,12 +1872,18 @@ function MAIN() {
           var base = store.added[t] ? cur : cur - grp.querySelectorAll('tr.m:not([data-extra])').length + Array.prototype.filter.call(grp.querySelectorAll('tr.m:not([data-extra])'), function (r) { return store.gone[r.dataset.s]; }).length;
           save('need', t, String(cur + n));
           g.people.forEach(function (pn, i) { save('names', store.added[t] ? t + '-' + (cur + i + 1) : t + '-x' + (base + i + 1), pn); });
+          (g.types || []).forEach(function (ty, i) {
+            if (!ty) return;
+            var rid = store.added[t] ? t + '-' + (cur + i + 1) : (i < g.people.length ? t + '-x' + (base + i + 1) : null);
+            if (rid) { pushStep([['ptype', rid, store.ptype[rid] || null]]); writePtype(rid, ty); }
+          });
         } else {
           t = 'a' + Date.now().toString(36) + gi;
           saveAdded(t, { order: Date.now() + gi });
           if (g.name) save('teams', t, g.name);
           save('need', t, String(n));
           g.people.forEach(function (pn, i) { save('names', t + '-' + (i + 1), pn); });
+          (g.types || []).forEach(function (ty, i) { if (ty && i < n) { pushStep([['ptype', t + '-' + (i + 1), store.ptype[t + '-' + (i + 1)] || null]]); writePtype(t + '-' + (i + 1), ty); } });
         }
         if (g.flag) save('flags', t, g.flag);
       });
@@ -1856,6 +1967,8 @@ function MAIN() {
       else if (k === 'gone') saveGone(id, !!prev);
       else if (k === 'added') saveAdded(id, prev);
       else if (k === 'pseat') writePseat(id, prev || null);
+      else if (k === 'pkind') writePkind(id, !!prev);
+      else if (k === 'ptype') writePtype(id, prev || null);
       else if (k === 'assign') writeAssign(id, prev || null);
       else if (k === 'title') window.__saveTitle(prev || '', false);
       else save(k, id, prev === undefined ? '' : String(prev));
