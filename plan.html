@@ -1331,6 +1331,17 @@ function MAIN() {
     });
     spreadMarkers();
     paintShade();
+    // a selected person (orange row) and a selected desk follow the person to their desk now
+    document.querySelectorAll('#desks .dk.ts').forEach(function (d) { d.classList.remove('ts'); });
+    document.querySelectorAll('#srows tr.m.sh').forEach(function (r) {
+      var s0 = deskOfRow(r); if (s0 && deskBy[s0] && !r.classList.contains('unused') && !r.classList.contains('pgone')) deskBy[s0].classList.add('ts');
+    });
+    var hr = document.querySelector('#srows tr.m.hi');
+    if (hr) {
+      var s1 = deskOfRow(hr);
+      document.querySelectorAll('#desks .dk.hi').forEach(function (d) { if (d.dataset.s !== s1) d.classList.remove('hi'); });
+      if (s1 && deskBy[s1]) deskBy[s1].classList.add('hi');
+    }
     DESKNAME = deskName; paintDeskNames();
     allDesks.forEach(function (d) { d.classList.toggle('hasp', d.dataset.s in deskName); });
     var sm = document.getElementById('shortmsg');
