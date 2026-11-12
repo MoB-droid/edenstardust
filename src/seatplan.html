@@ -123,6 +123,13 @@ tbody.grp.gone { display: none; }
 .expmenu button:hover, .expmenu button:focus-visible { background: color-mix(in srgb, var(--accent) 12%, transparent); outline: none; }
 .ltitle input { font: 600 18px var(--display); padding: 2px 8px; border: 1px solid var(--accent); border-radius: 4px; background: var(--paper); color: var(--fg); min-width: 280px; }
 #laymsg.ok { color: var(--fg); }
+/* one message bar under the buttons: always there (so nothing jumps), empty until there is something to say */
+.msgbar { min-height: 42px; box-sizing: border-box; margin: 10px 0 0; padding: 7px 14px; display: flex; flex-direction: column; justify-content: center; gap: 2px;
+  background: var(--paper); border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 8px; transition: border-color .15s, background-color .15s; }
+.msgbar .saveerr { font: 600 15px var(--display); line-height: 1.35; }
+.msgbar:has(.saveerr:not([hidden]):not(.ok)) { border-color: color-mix(in srgb, var(--clash) 45%, var(--line)); border-left-color: var(--clash); background: color-mix(in srgb, var(--clash) 6%, var(--paper)); }
+.msgbar:has(#laymsg.ok:not([hidden])) { border-left-color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .msgbar { transition: none; } }
 .tabletitle .undo { padding: 3px 10px; border: 1px solid var(--fg); line-height: normal; }
 /* row buttons line up under the title buttons: same widths, same gap, same right edge */
 .tabletitle .tools { gap: 6px; padding-right: 0; }
@@ -184,7 +191,7 @@ main > section.stack { display: grid; gap: 10px; }
 .ctrl-right { display: grid; grid-template-columns: auto auto; gap: 8px; margin-left: auto; align-content: start; }
 .ctrl-right .undo { width: 100%; text-align: center; }
 .sheetwrap { position: relative; display: block; }
-#sheet { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#sheet, #folder { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheetmenu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 7; display: grid; min-width: 190px; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.16); overflow: hidden; }
 .sheetmenu button { font: 500 14px var(--display); text-align: left; background: none; border: 0; padding: 9px 12px; color: var(--fg); cursor: pointer; }
 .sheetmenu button:hover, .sheetmenu button:focus-visible { background: var(--btn-off); outline: none; }
@@ -292,11 +299,14 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
         <div class="btnrow"><button type="button" id="upload" class="undo tip" data-tip="add teams from an Excel or CSV file (Claude reads it)" aria-label="Upload program">Upload program</button><button type="button" id="exp-xlsx" class="undo tip" data-tip="save the program as an Excel file" aria-label="Export program">Export</button></div>
         <input type="file" id="upfile" accept=".csv,.xlsx,.xls,.txt" hidden>
         <div class="btnrow"><span class="sheetwrap"><button type="button" id="sheet" class="undo tip" data-tip="take the program from a Google Sheet (it stays linked)" aria-label="Link a Google Sheet">Link sheet</button></span><button type="button" id="sheet-up" class="undo tip" data-tip="update the program from the linked Google Sheet" aria-label="Update from the Google Sheet" hidden>Update</button></div>
+        <div class="btnrow"><span class="sheetwrap"><button type="button" id="folder" class="undo tip" data-tip="save exports to a Google Drive folder" aria-label="Link a Google Drive folder for exports">Link folder</button></span></div>
       </div>
     </div>
-    <p class="saveerr" id="laymsg" hidden></p>
-    <p class="saveerr" id="shortmsg" hidden></p>
-    <p class="saveerr" id="saveerr" hidden></p>
+    <div class="msgbar" role="status" aria-live="polite">
+      <p class="saveerr" id="laymsg" hidden></p>
+      <p class="saveerr" id="shortmsg" hidden></p>
+      <p class="saveerr" id="saveerr" hidden></p>
+    </div>
     <div class="totrow tabletitle"><h2>PROGRAM</h2></div>
     <p class="prognote" id="prognote" hidden></p>
     <div class="tablewrap"><table class="seats" id="srows">
@@ -1935,6 +1945,10 @@ function MAIN() {
   function closeExp() {}
   function fileBase() { return (titleVal || ltitle.dataset.def).replace(/^Layout\s*·\s*/, '').replace(/[\/:*?"<>|]+/g, '').trim() || 'Seat plan'; }
   function offerFile(name, blob) {
+    if (window.__driveSave && window.__driveSave(name, blob)) return Promise.resolve();
+    return downloadFile(name, blob);
+  }
+  function downloadFile(name, blob) {
     var use = window.claude && window.claude.use ? window.claude.use('downloads') : Promise.resolve(null);
     return use.then(function (dl) {
       if (!dl) { layNote('Saving files is not available in this view.'); return; }
@@ -1946,6 +1960,7 @@ function MAIN() {
   }
   var STYLE_PROPS = ['fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linejoin', 'opacity', 'display', 'visibility', 'font-family', 'font-size', 'font-weight', 'letter-spacing', 'text-anchor', 'dominant-baseline', 'paint-order', 'filter'];
   document.getElementById('exp-png').addEventListener('click', function () {
+    if (window.__driveWarm) window.__driveWarm();
     closeExp();
     var svg = document.getElementById('plan'), clone = svg.cloneNode(true);
     var src = svg.querySelectorAll('*'), dst = clone.querySelectorAll('*');
@@ -1969,6 +1984,7 @@ function MAIN() {
     img.src = url;
   });
   document.getElementById('exp-xlsx').addEventListener('click', function () {
+    if (window.__driveWarm) window.__driveWarm();
     closeExp();
     var rows = [['Team', 'Team name', 'Seats needed', '#', 'Name', 'Type', 'Seat']];
     document.querySelectorAll('#srows tbody.grp').forEach(function (g) {
@@ -2019,8 +2035,9 @@ function MAIN() {
   if (window.claude && window.claude.use) window.claude.use('db').then(function (d) {
     if (!d) return;
     d.collection('meta').onSnapshot(function (snap) {
-      var v = null, sh = null; snap.docs.forEach(function (doc) { var b = doc.data(); if (doc.id === 'title' && b && b.name) v = String(b.name); if (doc.id === 'sheet' && b && b.id) sh = b; });
+      var v = null, sh = null, fo = null; snap.docs.forEach(function (doc) { var b = doc.data(); if (doc.id === 'title' && b && b.name) v = String(b.name); if (doc.id === 'sheet' && b && b.id) sh = b; if (doc.id === 'folder' && b && b.id) fo = b; });
       if (window.__setSheetMeta) window.__setSheetMeta(sh);
+      if (window.__setFolderMeta) window.__setFolderMeta(fo);
       titleVal = v; paintTitle();
     }, function () {});
   });
@@ -2296,8 +2313,8 @@ function MAIN() {
   var sheetBtn = document.getElementById('sheet'), sheetUp = document.getElementById('sheet-up');
   function paintSheet() {
     var on = !!(sheetMeta && sheetMeta.id);
-    sheetBtn.textContent = on ? 'Sheet: ' + sheetMeta.name : 'Link sheet';
-    sheetBtn.dataset.tip = on ? 'change or unlink the Google Sheet' : 'take the program from a Google Sheet (it stays linked)';
+    sheetBtn.textContent = on ? 'Sheet ✓' : 'Link sheet';
+    sheetBtn.dataset.tip = on ? 'program from “' + sheetMeta.name + '” · change or unlink' : 'take the program from a Google Sheet (it stays linked)';
     sheetBtn.title = on ? sheetMeta.name : '';
     sheetUp.hidden = !on;
   }
@@ -2428,6 +2445,86 @@ function MAIN() {
   document.addEventListener('click', function (e) { if (!e.target.closest('.sheetmenu, #sheet')) closeSheetMenu(); });
   sheetUp.addEventListener('click', updateFromSheet);
   window.__setSheetMeta = function (v) { sheetMeta = v; paintSheet(); };
+
+  // ---- Google Drive folder for exports: picked in Google's picker; Export then saves there (same file name = the
+  // same file, updated) instead of downloading. Unlink to download again.
+  var folderMeta = null, folderBtn = document.getElementById('folder'), driveTok = null;
+  function paintFolder() {
+    var on = !!(folderMeta && folderMeta.id);
+    folderBtn.textContent = on ? 'Folder ✓' : 'Link folder';   // short, so the button rows keep their widths
+    folderBtn.dataset.tip = on ? 'exports go to “' + folderMeta.name + '” · open, change or unlink' : 'save exports to a Google Drive folder';
+    folderBtn.title = on ? folderMeta.name : '';
+    if (on && onSite() && GSHEET.apiKey) googleReady().catch(function () {});   // ready for the next Export click
+  }
+  function saveFolderMeta(v) {
+    folderMeta = v; paintFolder();
+    if (db) { var ref = db.collection('meta').doc('folder'); (v ? ref.set(v) : ref.delete()).then(function () {}, function () {}); }
+  }
+  window.__setFolderMeta = function (v) { folderMeta = v; paintFolder(); };
+  function pickFolder() {
+    if (!onSite()) { layNote('Linking a Google Drive folder works on edenstardust.com.'); return; }
+    if (!GSHEET.apiKey) { layNote('Google Drive linking is not switched on yet.'); return; }
+    googleReady().then(googleToken).then(function (token) {
+      var gp = window.google.picker;
+      var view = new gp.DocsView(gp.ViewId.FOLDERS).setIncludeFolders(true).setSelectFolderEnabled(true).setMimeTypes('application/vnd.google-apps.folder');
+      new gp.PickerBuilder().addView(view).setOAuthToken(token).setDeveloperKey(GSHEET.apiKey).setAppId(GSHEET.appId)
+        .setTitle('Choose the folder for exports').setCallback(function (d) {
+          if (d.action !== gp.Action.PICKED || !d.docs || !d.docs[0]) return;
+          var f = d.docs[0];
+          saveFolderMeta({ id: f.id, name: f.name, url: f.url || '' });
+          layNote('Exports will be saved to the Google Drive folder "' + f.name + '".', true);
+        }).build().setVisible(true);
+    }).catch(sheetError);
+  }
+  folderBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (document.querySelector('.sheetmenu')) return closeSheetMenu();
+    if (!folderMeta || !folderMeta.id) return pickFolder();
+    var m = document.createElement('div'); m.className = 'sheetmenu';
+    m.innerHTML = '<div class="sm-name"></div><button type="button" data-a="open">Open the folder</button><button type="button" data-a="change">Change folder</button><button type="button" data-a="unlink">Unlink (download exports again)</button>';
+    m.firstChild.textContent = folderMeta.name;
+    m.addEventListener('click', function (ev) {
+      var a = ev.target.dataset && ev.target.dataset.a; if (!a) return;
+      closeSheetMenu();
+      if (a === 'open') window.open(folderMeta.url || 'https://drive.google.com/drive/folders/' + folderMeta.id, '_blank', 'noopener');
+      else if (a === 'change') pickFolder();
+      else { saveFolderMeta(null); layNote('Exports will be downloaded again.', true); }
+    });
+    folderBtn.parentNode.appendChild(m);
+    m.querySelector('button').focus();
+  });
+  // at the Export click: get Google access now, so its window is not blocked
+  window.__driveWarm = function () {
+    if (!folderMeta || !folderMeta.id || !onSite() || !GSHEET.apiKey) return;
+    driveTok = googleReady().then(googleToken);
+    driveTok.catch(function () {});
+  };
+  // save into the linked folder: the file with the same name is updated, else a new one is made
+  window.__driveSave = function (name, blob) {
+    if (!folderMeta || !folderMeta.id || !onSite() || !GSHEET.apiKey) return false;
+    var tok = driveTok || googleReady().then(googleToken);
+    driveTok = null;
+    layNote('Saving ' + name + ' to Google Drive…', true);
+    tok.then(function (token) {
+      var q = "name = '" + name.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "' and '" + folderMeta.id + "' in parents and trashed = false";
+      return fetch('https://www.googleapis.com/drive/v3/files?fields=files(id)&q=' + encodeURIComponent(q), { headers: { Authorization: 'Bearer ' + token } })
+        .then(function (r) { return r.ok ? r.json() : { files: [] }; })
+        .then(function (found) {
+          var id = found.files && found.files[0] && found.files[0].id;
+          if (id) return fetch('https://www.googleapis.com/upload/drive/v3/files/' + id + '?uploadType=media&fields=id,webViewLink', { method: 'PATCH', headers: { Authorization: 'Bearer ' + token }, body: blob });
+          var form = new FormData();
+          form.append('metadata', new Blob([JSON.stringify({ name: name, parents: [folderMeta.id] })], { type: 'application/json' }));
+          form.append('file', blob);
+          return fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: form });
+        })
+        .then(function (r) { if (!r.ok) throw { code: 'http', status: r.status }; layNote('Saved to Google Drive: ' + folderMeta.name + ' / ' + name, true); });
+    }).catch(function (e) {
+      layNote('Could not save to Google Drive' + (e && e.status ? ' (' + e.status + ')' : '') + '. The file is downloaded instead.');
+      downloadFile(name, blob);
+    });
+    return true;
+  };
+  paintFolder();
   paintSheet();
   // ---- Drag and drop: drop a floor plan (PDF / PNG / JPG) or a program (Excel / CSV) anywhere on the page.
   // The frame under the pointer lights up; the file type decides whether it is the layout or the program.
