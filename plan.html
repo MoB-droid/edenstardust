@@ -239,6 +239,9 @@ main > section.stack.dropping { outline: 3px dashed var(--btn); outline-offset: 
 main > section.stack.dropping::after { content: attr(data-drop); position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 20; pointer-events: none;
   max-width: 90%; text-align: center; font: 600 18px var(--display); color: var(--btn-ink); background: var(--btn); padding: 12px 18px; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
 main > section.stack:first-child.dropping .planwrap { opacity: .5; }
+.seats td.ty { cursor: text; width: 1%; }
+.seats td.ty.auto { color: var(--muted); }
+.seats td.ty input { font: 500 14px var(--mono); width: 3.2em; padding: 4px 6px; margin: -5px 0; border: 1px solid var(--accent); border-radius: 4px; background: var(--paper); color: var(--fg); text-transform: uppercase; }
 /* unused desk (no team holds it): white, desk outline only */
 .dk.free:not(.hi):not(.th):not(.ts):not(.drop) rect { fill: var(--plan); fill-opacity: 1; stroke: var(--desk-edge); stroke-width: 1.4; }
 .dk.free:not(.hi):not(.th):not(.ts) text { fill: var(--muted); }
@@ -288,7 +291,7 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
     <div class="totrow tabletitle"><h2>PROGRAM</h2></div>
     <p class="prognote" id="prognote" hidden></p>
     <div class="tablewrap"><table class="seats" id="srows">
-      <thead><tr><th class="num">#</th><th>Name</th><th class="num">Seat</th><th class="del"><span class="acts"><button type="button" id="addteam" class="undo tip" data-tip="add team" aria-label="Add team">+</button><span class="delwrap"><button type="button" id="delprog" class="delbtn tip" data-tip="delete the whole program" aria-label="Delete all">Delete all</button></span></span></th></tr></thead>
+      <thead><tr><th class="num">#</th><th>Name</th><th class="num">Seat</th><th class="num">Type</th><th class="del"><span class="acts"><button type="button" id="addteam" class="undo tip" data-tip="add team" aria-label="Add team">+</button><span class="delwrap"><button type="button" id="delprog" class="delbtn tip" data-tip="delete the whole program" aria-label="Delete all">Delete all</button></span></span></th></tr></thead>
     </table></div>
   </section>
 </main>
@@ -374,8 +377,8 @@ function renderLayout(L) {
   scaleMarkers();
   var rows = order.filter(function (t) { return t !== '0'; }).map(function (t) {
     var ds = teams[t];
-    return '<tbody class="grp" data-t="' + t + '"><tr class="gh"><td><button type="button" class="fold" aria-expanded="false"><span class="car" aria-hidden="true"></span>T' + t + '</button></td><td class="tn ed" data-k="teams" data-id="' + t + '" title="Double-click to edit"></td><td class="num cnt ed" data-k="need" data-id="' + t + '" data-def="' + ds.length + '" title="Double-click to edit">' + ds.length + '</td><td class="del"><span class="acts"><button type="button" class="addbtn tip" data-tip="add team member" data-t="' + t + '" aria-label="Add a person to team T' + t + '">+</button><button type="button" class="delbtn" data-t="' + t + '" aria-label="Delete team T' + t + '">Delete</button></span></td></tr>' +
-      ds.map(function (e, i) { return '<tr data-s="' + e.s + '" class="m" hidden><td class="num">' + (i + 1) + '</td><td class="nm ed" data-k="names" data-id="' + e.s + '" title="Double-click to edit"></td><td class="num">' + e.s + '</td><td class="del"><button type="button" class="delbtn" data-s="' + e.s + '" aria-label="Delete this person">Delete</button></td></tr>'; }).join('') + '</tbody>';
+    return '<tbody class="grp" data-t="' + t + '"><tr class="gh"><td><button type="button" class="fold" aria-expanded="false"><span class="car" aria-hidden="true"></span>T' + t + '</button></td><td class="tn ed" data-k="teams" data-id="' + t + '" title="Double-click to edit"></td><td class="num cnt ed" data-k="need" data-id="' + t + '" data-def="' + ds.length + '" title="Double-click to edit">' + ds.length + '</td><td></td><td class="del"><span class="acts"><button type="button" class="addbtn tip" data-tip="add team member" data-t="' + t + '" aria-label="Add a person to team T' + t + '">+</button><button type="button" class="delbtn" data-t="' + t + '" aria-label="Delete team T' + t + '">Delete</button></span></td></tr>' +
+      ds.map(function (e, i) { return '<tr data-s="' + e.s + '" class="m" hidden><td class="num">' + (i + 1) + '</td><td class="nm ed" data-k="names" data-id="' + e.s + '" title="Double-click to edit"></td><td class="num">' + e.s + '</td><td class="num ty" title="Double-click to set the type: OS, S, M or C"></td><td class="del"><button type="button" class="delbtn" data-s="' + e.s + '" aria-label="Delete this person">Delete</button></td></tr>'; }).join('') + '</tbody>';
   }).join('');
   var tbl = document.getElementById('srows');
   tbl.querySelectorAll('tbody').forEach(function (b) { b.remove(); });
@@ -951,6 +954,26 @@ function MAIN() {
     inp.addEventListener('blur', function () { finish(true); });
     inp.addEventListener('click', function (ev) { ev.stopPropagation(); });
   });
+  document.getElementById('srows').addEventListener('dblclick', function (e) {
+    var c = e.target.closest('td.ty'); if (!c || c.querySelector('input')) return;
+    var r = c.closest('tr.m'), id = r.dataset.s;
+    var inp = document.createElement('input');
+    inp.type = 'text'; inp.id = 'ed-ptype-' + id; inp.value = store.ptype[id] || ''; inp.maxLength = 2;
+    inp.placeholder = c.textContent; inp.setAttribute('aria-label', 'Desk type: OS, S, M or C (empty = from the desk)');
+    c.textContent = ''; c.appendChild(inp); inp.focus(); inp.select();
+    var done = false;
+    function finish(keep) {
+      if (done) return; done = true; var v = inp.value.trim().toUpperCase(); c.removeChild(inp);
+      if (keep) {
+        if (v && !/^(OS|S|M|C)$/.test(v)) showErr('Type must be OS, S, M or C.');
+        else if ((store.ptype[id] || '') !== v) { showErr(''); pushStep([['ptype', id, store.ptype[id] || null]]); writePtype(id, v || null); }
+      }
+      relayout();
+    }
+    inp.addEventListener('keydown', function (ev) { ev.stopPropagation(); if (ev.key === 'Enter') finish(true); else if (ev.key === 'Escape') finish(false); });
+    inp.addEventListener('blur', function () { finish(true); });
+    inp.addEventListener('click', function (ev) { ev.stopPropagation(); });
+  });
   var teamsG = document.getElementById('teams');
   // Shading follows the desks a team holds now (its own, the ones Suggest gave it, or the ones a drag gave it).
   var SHADED = {}, CUR = {};
@@ -1000,7 +1023,7 @@ function MAIN() {
   function addedIds() { return Object.keys(store.added).sort(function (a, b) { return store.added[a].order - store.added[b].order; }); }
   function esc(v) { return String(v).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function personRow(pid, i) {
-    return '<tr data-s="' + esc(pid) + '" class="m" hidden><td class="num">' + i + '</td><td class="nm ed" data-k="names" data-id="' + esc(pid) + '" title="Double-click to edit"></td><td class="num">–</td><td class="del"><button type="button" class="delbtn" data-s="' + esc(pid) + '" aria-label="Delete this person">Delete</button></td></tr>';
+    return '<tr data-s="' + esc(pid) + '" class="m" hidden><td class="num">' + i + '</td><td class="nm ed" data-k="names" data-id="' + esc(pid) + '" title="Double-click to edit"></td><td class="num">–</td><td class="num ty" title="Double-click to set the type: OS, S, M or C"></td><td class="del"><button type="button" class="delbtn" data-s="' + esc(pid) + '" aria-label="Delete this person">Delete</button></td></tr>';
   }
   function syncAdded() {
     var ids = addedIds(), tbl = document.getElementById('srows'), tg = document.getElementById('teams');
@@ -1011,7 +1034,7 @@ function MAIN() {
       if (!grp) {
         grp = document.createElement('tbody');
         grp.className = 'grp'; grp.dataset.t = t; grp.dataset.added = '1';
-        grp.innerHTML = '<tr class="gh"><td><button type="button" class="fold" aria-expanded="false"><span class="car" aria-hidden="true"></span>T</button></td><td class="tn ed" data-k="teams" data-id="' + esc(t) + '" title="Double-click to edit"></td><td class="num cnt ed" data-k="need" data-id="' + esc(t) + '" data-def="" title="Double-click to edit"></td><td class="del"><span class="acts"><button type="button" class="addbtn tip" data-tip="add team member" data-t="' + esc(t) + '" aria-label="Add a person to this team">+</button><button type="button" class="delbtn" data-t="' + esc(t) + '" aria-label="Delete this team">Delete</button></span></td></tr>';
+        grp.innerHTML = '<tr class="gh"><td><button type="button" class="fold" aria-expanded="false"><span class="car" aria-hidden="true"></span>T</button></td><td class="tn ed" data-k="teams" data-id="' + esc(t) + '" title="Double-click to edit"></td><td class="num cnt ed" data-k="need" data-id="' + esc(t) + '" data-def="" title="Double-click to edit"></td><td></td><td class="del"><span class="acts"><button type="button" class="addbtn tip" data-tip="add team member" data-t="' + esc(t) + '" aria-label="Add a person to this team">+</button><button type="button" class="delbtn" data-t="' + esc(t) + '" aria-label="Delete this team">Delete</button></span></td></tr>';
         tbl.appendChild(grp);
       } else tbl.appendChild(grp);
       // people rows: one per seat needed
@@ -1269,7 +1292,12 @@ function MAIN() {
       });
       pend = pend.filter(function (r) { return !r._desk; });
       pend.forEach(function (r) { takeDesk(r, rowSingle(r.dataset.s)); });
-      pend.forEach(function (r) { if (!r._desk) takeDesk(r); });
+      // no desk of the right kind: keep one's own place if it is free, else any desk left
+      pend.forEach(function (r) {
+        if (r._desk) return;
+        var own = mine[rows.indexOf(r)];
+        if (own && !usedD[own.dataset.s]) { r._desk = own; usedD[own.dataset.s] = 1; } else takeDesk(r);
+      });
       rows.forEach(function (r, i) { if (i < need && r._desk) held.push(r._desk); });
       if (rows.length < need) mine.slice(rows.length, need).forEach(function (d) { if (!usedD[d.dataset.s]) held.push(d); });
       mine.forEach(function (d) { if (held.indexOf(d) < 0 && d.dataset.t === t) homeUsed[d.dataset.s] = homeUsed[d.dataset.s] || false; });
@@ -1284,6 +1312,12 @@ function MAIN() {
         if (i >= need) { r.classList.add('unused'); return; }
         var seatCell = r.children[2], d = r._desk;
         seatCell.textContent = d ? d.dataset.s : '–';
+        var tyCell = r.querySelector('td.ty');
+        if (tyCell && !tyCell.querySelector('input')) {
+          var tyx = store.ptype[r.dataset.s];
+          tyCell.textContent = tyx || (d ? (isSingleDesk(d) ? 'S' : 'OS') : '');
+          tyCell.classList.toggle('auto', !tyx);
+        }
         if (d && !(d.dataset.s in deskName)) deskName[d.dataset.s] = store.names[r.dataset.s] || '';
       });
       if (mv || asg) own.forEach(function (d) { homeUsed[d.dataset.s] = homeUsed[d.dataset.s] || false; });
