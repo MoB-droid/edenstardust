@@ -234,6 +234,17 @@ main > section.stack { display: grid; gap: 10px; }
 .addbtn:hover { background: var(--btn-off) !important; }
 .delbtn:hover { color: var(--clash) !important; border-color: var(--clash) !important; }
 .ctrl-left { border-color: var(--btn-soft) !important; }
+/* phones and narrow screens: the plan scrolls inside its own frame, so keep that frame short enough that the
+   page around it (buttons, PROGRAM) stays reachable with a swipe */
+@media (max-width: 1199px) { .planwrap { max-height: 55vh; overscroll-behavior: auto; } }
+/* phones: the PROGRAM row buttons get smaller so the table fits inside its frame */
+@media (max-width: 560px) {
+  #delprog, .seats .delbtn { width: auto !important; padding: 0 8px !important; font-size: 12px; }
+  .seats th.del #addteam, .seats .addbtn { width: 28px; min-width: 28px; padding: 0 !important; }
+  .seats th:nth-child(2), .seats td:nth-child(2) { min-width: 64px !important; }
+  .seats .acts { gap: 6px !important; }
+  .seats th, .seats td { padding-left: 4px; padding-right: 4px; }
+}
 /* wide screens: layout on the left (stays in view while the program scrolls), totals and PROGRAM on the right */
 @media (min-width: 1200px) {
   main { max-width: none; grid-template-columns: 65vw minmax(0, 1fr); align-items: start; column-gap: 28px; }
