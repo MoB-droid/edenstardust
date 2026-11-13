@@ -33,7 +33,7 @@ A seating planner. A company user signs in, sees their seat plans as picture til
 | 4 | Website files | this repo, branch `main`, GitHub Pages (root folder), custom domain edenstardust.com, HTTPS enforced | pushing `main` deploys |
 | 5 | Users, plan data, files | Supabase project `edenstardust`, ref `ldvzztgzamahlftnbawr`, region Frankfurt | free plan |
 | 6 | Domain + DNS | GoDaddy | A @ → 185.199.108–111.153; CNAME www → mob-droid.github.io; Resend records on `send.` and `resend._domainkey` |
-| 7 | Google sign-in | Google Cloud project `edenstardust` (owner: the site's support Gmail, see privacy page), app "EdenStardust", in production | client ID/secret are set in Supabase → Auth → Providers → Google. Same project serves the editor's **Link sheet** / **Link folder**: Picker, Sheets and Drive APIs on; browser API key "EdenStardust web key" (limited to edenstardust.com and those 3 APIs) is `GSHEET.apiKey` in `src/seatplan.html`; scope `drive.file` (non-sensitive) on Data access |
+| 7 | Google sign-in | Google Cloud project `edenstardust` (owner: the site's support Gmail, see privacy page), app "EdenStardust", in production | client ID/secret are set in Supabase → Auth → Providers → Google. Same project serves the editor's **Link sheet** and the Google Drive destination of **Download layout / Download program** (each has a destination icon + Change; saved in `meta/dest`): Picker, Sheets and Drive APIs on; browser API key "EdenStardust web key" (limited to edenstardust.com and those 3 APIs) is `GSHEET.apiKey` in `src/seatplan.html`; scope `drive.file` (non-sensitive) on Data access |
 | 8 | Emails (sign-up confirmation) | Resend, domain edenstardust.com verified, Ireland region | Supabase custom SMTP: smtp.resend.com:465, user `resend`, sender noreply@edenstardust.com |
 | 9 | Legal pages | `privacy.html`, `terms.html` (hand-written, in this repo) | linked from the login box; required by Google |
 
@@ -91,3 +91,4 @@ Only these artifacts belong on the user's Claude for this project. **Never creat
 2. Excel upload uses the built-in reader only; Claude-assisted reading would need a paid AI key in a Supabase Edge Function.
 3. The user's older Seat Plan artifacts on claude.ai were not migrated to Supabase.
 4. Supabase free plan pauses after a week without activity; move to Pro when real users arrive.
+5. Link sheet → Update with the sheet "program1" (12 Nov 2026) made 8 teams with no names or seats. Not yet explained: read that sheet (with the user's OK) and check the column matching in the sheet reader.
