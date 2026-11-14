@@ -181,14 +181,15 @@
     }
   };
 
-  // a way back to the dashboard, next to the logo
+  // a way back to the dashboard: logo first on the left, then My plans
   document.addEventListener('DOMContentLoaded', function () {
     var bar = document.querySelector('.bar.brand');
     if (!bar) return;
     var a = document.createElement('a');
-    a.href = '/'; a.className = 'eden-back'; a.textContent = '← My plans';
+    a.href = '/'; a.className = 'eden-back'; a.textContent = 'My plans';
     a.setAttribute('aria-label', 'Back to my seat plans');
-    bar.insertBefore(a, bar.firstChild);
+    var logo = bar.querySelector('.logo');
+    if (logo) logo.insertAdjacentElement('afterend', a); else bar.insertBefore(a, bar.firstChild);
     var st = document.createElement('style');
     st.textContent = '.eden-back{font:600 14px "IBM Plex Mono",ui-monospace,monospace;color:#ffffff;background:#144878;border-radius:8px;padding:8px 12px;text-decoration:none;white-space:nowrap}.eden-back:hover{background:#0e3659}.eden-back:focus-visible{outline:2px solid #9fd0f5;outline-offset:2px}';
     document.head.appendChild(st);
