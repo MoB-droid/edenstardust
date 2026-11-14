@@ -133,6 +133,8 @@
   .dash-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; border-bottom: 2px solid var(--d-fg); padding-bottom: 14px; }
   .dash-brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
   .dash-brand svg { width: 44px; height: 44px; flex: none; }
+  .dash-brand .brandlogo { width: 48px; height: 48px; flex: none; background: #fff; border-radius: 12px; padding: 3px; box-sizing: border-box; }
+  .gatelogo { width: 84px; height: 84px; justify-self: center; background: #fff; border-radius: 20px; padding: 6px; box-sizing: border-box; }
   .dash-brand h1 { margin: 0; font: 600 clamp(1.5rem, 4vw, 2rem)/1.1 var(--d-display); text-wrap: balance; }
   .dash .bar { position: static; color: var(--d-muted); font-family: var(--d-mono); flex-wrap: wrap; }
   .dash .bar button { font: 600 0.85rem var(--d-mono); color: var(--d-btn-ink); background: var(--d-btn); border: 0; border-radius: 8px; padding: 8px 14px; }
@@ -184,6 +186,7 @@
     .dash-head { flex-direction: column; align-items: stretch; gap: 10px; padding-bottom: 10px; }
     .dash-brand { gap: 10px; }
     .dash-brand svg { width: 34px; height: 34px; }
+    .dash-brand .brandlogo { width: 38px; height: 38px; border-radius: 10px; }
     .dash-brand h1 { font-size: 1.45rem; }
     .dash .bar { display: flex; flex-wrap: nowrap; gap: 8px; width: 100%; }
     .dash .bar #who { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; }
@@ -251,7 +254,7 @@
   <div class="dash-in">
     <header class="dash-head" id="dash-head">
       <div class="dash-brand">
-        <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="13" fill="#144878"/><g fill="#ffffff"><path d="M23.5 21.5 C21 12.8 15.2 8.4 7 7 C6.6 15.4 7.8 22.2 11.6 25.4 C14.9 28 19 28.2 23.5 27.5 Z"/><path d="M23.5 28.5 C16.4 28.4 11.6 31.4 10.5 41 C17.8 41.6 22.8 37.2 23.5 31.6 Z"/><g transform="translate(48 0) scale(-1 1)"><path d="M23.5 21.5 C21 12.8 15.2 8.4 7 7 C6.6 15.4 7.8 22.2 11.6 25.4 C14.9 28 19 28.2 23.5 27.5 Z"/><path d="M23.5 28.5 C16.4 28.4 11.6 31.4 10.5 41 C17.8 41.6 22.8 37.2 23.5 31.6 Z"/></g></g></svg>
+        <img class="brandlogo" src="logo.png" alt="">
         <h1>My seat plans</h1>
       </div>
     </header>
@@ -264,6 +267,7 @@
 
 <div class="gate" id="gate">
   <form class="card" id="auth-form" novalidate>
+    <img class="gatelogo" src="logo.png" alt="">
     <h2 class="brand">EdenStardust</h2>
     <p class="tagline">Log in to enter</p>
     <button type="button" class="google" id="google">

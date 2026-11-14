@@ -19,6 +19,7 @@ HEAD = (
     '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
     '<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}'
     'body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>\n'
+    '<link rel="icon" type="image/png" href="/favicon.png">\n<link rel="apple-touch-icon" href="/logo.png">\n'
 )
 
 

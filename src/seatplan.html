@@ -182,7 +182,7 @@ main > section.stack { display: grid; gap: 10px; }
 .brand { justify-content: flex-start; gap: 14px; min-height: 48px; }
 .brand .ltitle { font-weight: 600; line-height: 1.2; }
 .ltitle input { font-size: inherit !important; }
-.logo { width: 44px; height: 44px; flex: none; }
+.logo { width: 44px; height: 44px; flex: none; background: #fff; border-radius: 12px; padding: 3px; box-sizing: border-box; }
 .ctrls { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px 10px; margin-top: 38px; }
 .ctrl-left { display: grid; grid-template-columns: auto auto; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: var(--paper); }
 .ctrl-left .zoom { grid-column: 1 / -1; justify-self: stretch; display: flex; }
@@ -324,7 +324,7 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
 <main>
   <section class="stack">
     <div class="bar brand">
-      <svg class="logo" viewBox="0 0 48 48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="13" fill="#144878"/><g fill="#ffffff"><path d="M23.5 21.5 C21 12.8 15.2 8.4 7 7 C6.6 15.4 7.8 22.2 11.6 25.4 C14.9 28 19 28.2 23.5 27.5 Z"/><path d="M23.5 28.5 C16.4 28.4 11.6 31.4 10.5 41 C17.8 41.6 22.8 37.2 23.5 31.6 Z"/><g transform="translate(48 0) scale(-1 1)"><path d="M23.5 21.5 C21 12.8 15.2 8.4 7 7 C6.6 15.4 7.8 22.2 11.6 25.4 C14.9 28 19 28.2 23.5 27.5 Z"/><path d="M23.5 28.5 C16.4 28.4 11.6 31.4 10.5 41 C17.8 41.6 22.8 37.2 23.5 31.6 Z"/></g></g></svg>
+      <img class="logo" src="logo.png" alt="">
       <h2 id="ltitle" class="ltitle" data-def="Layout · New floor" title="Double-click to edit">Layout · New floor</h2>
     </div>
     <div class="planwrap" id="wrap">
