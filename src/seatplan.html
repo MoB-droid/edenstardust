@@ -191,6 +191,26 @@ main > section.stack { display: grid; gap: 10px; }
 .ctrl-right { display: grid; grid-template-columns: auto auto auto; gap: 8px; margin-left: auto; align-content: start; align-items: center; }
 .ctrl-right .span3 { grid-column: 1 / -1; }
 .ctrl-right .span2 { grid-column: 2 / -1; }
+/* Upload program · Link sheet · Update sheet: one row, side by side */
+.ctrl-right .btnrow.trio { display: flex; grid-column: 1 / -1; gap: 8px; }
+.trio > .undo, .trio > .sheetwrap { flex: 1 1 auto; min-width: 0; }
+.trio .undo { white-space: nowrap; padding-left: 8px; padding-right: 8px; }
+.trio #sheet { overflow: visible; text-overflow: clip; }
+/* right controls: LAYOUT box on top, PROGRAM box below */
+.ctrl-right { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
+.rgrp { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
+.rgrp .cglabel { grid-column: 1 / -1; }
+/* LAYOUT / PROGRAM buttons: squarish, one word on top of the other, side by side */
+.rgrp { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+.rgrp .cglabel { flex: 0 0 100%; }
+.rgrp .btnrow, .ctrl-right .rgrp .btnrow.trio { display: contents; }
+.rgrp .sheetwrap { display: block; flex: none; }
+.rgrp .undo, .rgrp #sheet { flex: none; width: 92px !important; height: 80px; min-width: 0; max-width: none; padding: 6px !important; white-space: normal !important; overflow: visible; text-overflow: clip; line-height: 1.25; text-align: center; font-size: 15px; display: grid; place-items: center; grid-column: auto; }
+.rgrp .chg { width: 116px !important; font-size: 14px; align-content: center; gap: 6px; }
+.rgrp .chg .dest { width: auto; height: auto; border: 0; background: none; border-radius: 0; }
+.rgrp .chg .dest svg { width: 24px; height: 24px; }
+.rgrp .chg .dest .pc { fill: currentColor; }
+.trio .sheetwrap #sheet { width: 100%; }
 /* where a download goes: one icon for the current place (this computer or Google Drive) */
 .dest { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 27px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); }
 .dest svg { width: 18px; height: 18px; display: block; }
@@ -333,13 +353,16 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
         </div>
       </div>
       <div class="ctrl-right">
-        <div class="btnrow"><button type="button" id="uplayout" class="undo tip span3" data-tip="update or replace the floor plan (PDF or image)" aria-label="Upload layout">Upload layout</button></div>
+        <div class="cgroup rgrp"><span class="cglabel">Layout</span>
+        <div class="btnrow"><button type="button" id="uplayout" class="undo tip span3" data-tip="update or replace the floor plan (PDF or image)" aria-label="Upload layout">Upload<br>layout</button></div>
         <input type="file" id="layfile" accept=".pdf,.png,.jpg,.jpeg" hidden>
-        <div class="btnrow"><button type="button" id="exp-png" class="undo tip" data-tip="save the layout as a picture (JPEG)" aria-label="Download layout picture">Download layout</button><span class="dest" id="dest-layout" role="img"></span><span class="sheetwrap"><button type="button" id="chg-layout" class="undo chg tip" data-tip="choose where the layout is saved" aria-label="Change where the layout is saved">Change</button></span></div>
-        <div class="btnrow"><button type="button" id="upload" class="undo tip span3" data-tip="add teams from an Excel or CSV file (Claude reads it)" aria-label="Upload program">Upload program</button></div>
+        <div class="btnrow"><button type="button" id="exp-png" class="undo tip" data-tip="save the layout as a picture (JPEG)" aria-label="Download layout picture">Download<br>layout</button><span class="sheetwrap"><button type="button" id="chg-layout" class="undo chg tip" data-tip="choose where the layout is saved" aria-label="Change where the layout is saved">Destination<span class="dest" id="dest-layout" role="img"></span></button></span></div>
+        </div>
+        <div class="cgroup rgrp"><span class="cglabel">Program</span>
+        <div class="btnrow trio"><button type="button" id="upload" class="undo tip" data-tip="add teams from an Excel or CSV file (Claude reads it)" aria-label="Upload program">Upload<br>program</button><span class="sheetwrap"><button type="button" id="sheet" class="undo tip" data-tip="take the program from a Google Sheet (it stays linked)" aria-label="Link a Google Sheet">Link<br>sheet</button></span><button type="button" id="sheet-up" class="undo tip" data-tip="update the program from the linked Google Sheet" aria-label="Update from the Google Sheet" disabled>Update<br>sheet</button></div>
         <input type="file" id="upfile" accept=".csv,.xlsx,.xls,.txt" hidden>
-        <div class="btnrow"><button type="button" id="exp-xlsx" class="undo tip" data-tip="save the program as an Excel file" aria-label="Download program">Download program</button><span class="dest" id="dest-program" role="img"></span><span class="sheetwrap"><button type="button" id="chg-program" class="undo chg tip" data-tip="choose where the program is saved" aria-label="Change where the program is saved">Change</button></span></div>
-        <div class="btnrow"><span class="sheetwrap"><button type="button" id="sheet" class="undo tip" data-tip="take the program from a Google Sheet (it stays linked)" aria-label="Link a Google Sheet">Link sheet</button></span><button type="button" id="sheet-up" class="undo tip span2" data-tip="update the program from the linked Google Sheet" aria-label="Update from the Google Sheet" hidden>Update</button></div>
+        <div class="btnrow"><button type="button" id="exp-xlsx" class="undo tip" data-tip="save the program as an Excel file" aria-label="Download program">Download<br>program</button><span class="sheetwrap"><button type="button" id="chg-program" class="undo chg tip" data-tip="choose where the program is saved" aria-label="Change where the program is saved">Destination<span class="dest" id="dest-program" role="img"></span></button></span></div>
+        </div>
 </div>
       </div>
     </div>
@@ -2353,10 +2376,10 @@ function MAIN() {
   var sheetBtn = document.getElementById('sheet'), sheetUp = document.getElementById('sheet-up');
   function paintSheet() {
     var on = !!(sheetMeta && sheetMeta.id);
-    sheetBtn.textContent = on ? 'Sheet ✓' : 'Link sheet';
+    sheetBtn.innerHTML = on ? 'Link<br>sheet ✓' : 'Link<br>sheet';
     sheetBtn.dataset.tip = on ? 'program from “' + sheetMeta.name + '” · change or unlink' : 'take the program from a Google Sheet (it stays linked)';
     sheetBtn.title = on ? sheetMeta.name : '';
-    sheetUp.hidden = !on;
+    sheetUp.hidden = false; sheetUp.disabled = !on;
   }
   function onSite() { return !!window.__edenSb; }
   function googleReady() {
