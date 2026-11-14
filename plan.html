@@ -94,7 +94,25 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .team text.short { fill: var(--clash); font: 600 34px var(--display); letter-spacing: 0; paint-order: stroke; stroke: var(--plan); stroke-width: 8px; stroke-linejoin: round; }
 .dk.unused { display: none; }
 .seats tr.m.unused { display: none; }
-/* totals: one line, font sized by fitTotals() so it spans the column width */
+/* totals: one line, font sized by fitTotals() so it spans the column width (kept for sizing the titles; shown as the summary below) */
+.totrow .tot { position: absolute !important; width: 1px; height: 1px; overflow: hidden; visibility: hidden; pointer-events: none; }
+main > section.stack:last-child > .totrow:first-child { margin: 0 !important; height: 0; }
+.summ { display: grid; gap: 10px; margin-top: 4px; }
+.sum-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.sum-stats .st { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
+.sum-stats .st b { font: 700 clamp(24px, 3.2vw, 38px)/1 var(--display); color: var(--fg); font-variant-numeric: tabular-nums; }
+.sum-stats .st span { font: 600 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.sum-stats .st.used b { color: var(--btn-line-ink); }
+.sum-stats .st.free b { color: #a8924f; }
+.sum-bar { height: 12px; border-radius: 999px; background: var(--btn-off); overflow: hidden; }
+.sum-bar i { display: block; height: 100%; border-radius: inherit; background: var(--btn); }
+.sum-bar.over i { background: var(--clash); }
+.sum-cap { display: flex; justify-content: space-between; gap: 10px; font: 500 12px var(--mono); color: var(--muted); }
+.sum-teams { list-style: none; margin: 2px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; max-height: 210px; overflow: auto; }
+.sum-teams li { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); font-size: 13px; }
+.sum-teams .tno { flex: none; font: 600 11px var(--mono); color: var(--btn-ink); background: var(--btn); border-radius: 5px; padding: 2px 6px; }
+.sum-teams .tnm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+.sum-teams .tct { flex: none; font: 700 14px var(--mono); color: var(--fg); font-variant-numeric: tabular-nums; }
 .tot { font-size: 18px; line-height: 1.2; white-space: nowrap; flex: 1 0 100%; min-width: 0; overflow: hidden; }
 main > section.stack > * { min-width: 0; }
 main > section.stack:last-child > .totrow:first-child { margin-top: 11px; }
@@ -353,6 +371,7 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
     <div class="totrow">
   <h2 class="tot"><span class="ti">Total seats: <span id="tottot">0</span><span class="sep">·</span></span><span class="ti">Used: <span id="totused">0</span><span class="sep">·</span></span><span class="ti">Available: <span id="totfree">0</span></span></h2>
     </div>
+    <div class="summ" id="summ"></div>
     <div class="ctrls">
       <div class="ctrl-left">
         <div class="cgroup viewgrp">
@@ -1581,7 +1600,7 @@ function MAIN() {
     allDesks.forEach(function (d) { d.classList.remove('ov', 'empty', 'mv', 'free'); });
     document.querySelectorAll('tr.m.unused, tr.m.pgone').forEach(function (r) { r.classList.remove('unused', 'pgone'); });
     // Team numbers shown on screen skip deleted teams (T1, T2, … with no gaps).
-    var shownNo = 0, shortList = [], noOf = {};
+    var shownNo = 0, shortList = [], noOf = {}, teamSum = [];
     teamIds.forEach(function (t) {
       if (store.deleted[t]) return;
       shownNo++; noOf[t] = shownNo;
@@ -1612,6 +1631,8 @@ function MAIN() {
         own.forEach(function (d) { homeUsed[d.dataset.s] = homeUsed[d.dataset.s] || false; });
         return;
       }
+      var tnc = grp && grp.querySelector('.tn');
+      teamSum.push({ no: noOf[t], name: cap(store.teams[t] || (tnc && !tnc.querySelector('input') ? tnc.textContent : '') || '').trim(), n: need });
       var asg = !mv && store.assign[t] ? store.assign[t] : null;
       if (asg) {
         mine = asg.map(function (id) { return deskBy[id]; }).filter(Boolean).slice(0, need);
@@ -1721,7 +1742,24 @@ function MAIN() {
     var used = Object.keys(claim).length;
     document.getElementById('totused').textContent = used;
     document.getElementById('totfree').textContent = allDesks.length - used;
+    renderSummary(allDesks.length, used, teamSum);
     alignProgram();
+  }
+  // Program summary: seats used / available as tiles and a bar, then every group with its number of people
+  function renderSummary(total, used, teams) {
+    var el = document.getElementById('summ'); if (!el) return;
+    var free = Math.max(0, total - used), pct = total ? Math.round(used * 100 / total) : 0, over = used > total;
+    var people = teams.reduce(function (a, x) { return a + (x.n || 0); }, 0);
+    function esc(v) { return String(v).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+    el.innerHTML =
+      '<div class="sum-stats">'
+      + '<div class="st"><b>' + total + '</b><span>Total seats</span></div>'
+      + '<div class="st used"><b>' + used + '</b><span>Used</span></div>'
+      + '<div class="st free"><b>' + free + '</b><span>Available</span></div>'
+      + '</div>'
+      + (teams.length ? '<ul class="sum-teams">' + teams.map(function (x) {
+          return '<li><span class="tno">T' + x.no + '</span><span class="tnm">' + esc(x.name || 'Group ' + x.no) + '</span><span class="tct">' + x.n + '</span></li>';
+        }).join('') + '</ul>' : '');
   }
   window.__relayout = relayout;
   function svgPt(e) {
