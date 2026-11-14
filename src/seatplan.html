@@ -234,6 +234,18 @@ main > section.stack { display: grid; gap: 10px; }
 .addbtn:hover { background: var(--btn-off) !important; }
 .delbtn:hover { color: var(--clash) !important; border-color: var(--clash) !important; }
 .ctrl-left { border-color: var(--btn-soft) !important; }
+/* left controls: two separate boxes, VIEW (Fit / 2× / 3×) and actions (big Suggest + Undo icon) */
+.ctrl-left { display: flex; flex-direction: column; align-items: stretch; gap: 12px; border: 0 !important; padding: 0; background: none; }
+.cgroup { border: 1px solid var(--btn-soft); border-radius: 8px; padding: 8px; background: var(--paper); }
+.viewgrp { display: grid; gap: 6px; }
+.cglabel { font: 600 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding-left: 2px; }
+.viewgrp .zoom { display: flex; }
+.viewgrp .zoom button { flex: 1 1 0; }
+.actgrp { display: flex; gap: 8px; align-items: stretch; }
+.ctrl-left #suggest, .ctrl-left #undo { margin-top: 0; }
+.ctrl-left #suggest { flex: 1 1 auto; width: auto; height: 54px; font-size: 19px; font-weight: 600; }
+.ctrl-left #undo { flex: none; width: 54px; height: 54px; min-width: 0; padding: 0; display: grid; place-items: center; }
+#undo svg { width: 24px; height: 24px; display: block; }
 /* phones and narrow screens: the plan scrolls inside its own frame, so keep that frame short enough that the
    page around it (buttons, PROGRAM) stays reachable with a swipe */
 @media (max-width: 1199px) { .planwrap { max-height: 55vh; overscroll-behavior: auto; } }
@@ -307,14 +319,17 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
     </div>
     <div class="ctrls">
       <div class="ctrl-left">
-        <div class="zoom" role="group" aria-label="Zoom">
-          <button type="button" id="z1" data-z="1" aria-pressed="true">Fit</button>
-          <button type="button" id="z2" data-z="2" aria-pressed="false">2×</button>
-          <button type="button" id="z3" data-z="3.2" aria-pressed="false">3×</button>
+        <div class="cgroup viewgrp">
+          <span class="cglabel" id="viewlbl">View</span>
+          <div class="zoom" role="group" aria-labelledby="viewlbl">
+            <button type="button" id="z1" data-z="1" aria-pressed="true">Fit</button>
+            <button type="button" id="z2" data-z="2" aria-pressed="false">2×</button>
+            <button type="button" id="z3" data-z="3.2" aria-pressed="false">3×</button>
+          </div>
         </div>
-        <div class="btnrow">
+        <div class="cgroup actgrp">
           <button type="button" id="suggest" class="undo big" aria-label="Suggest a seating">Suggest</button>
-          <button type="button" id="undo" class="undo big" disabled aria-label="Undo last change">Undo</button>
+          <button type="button" id="undo" class="undo big tip" data-tip="undo last change" disabled aria-label="Undo last change"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
         </div>
       </div>
       <div class="ctrl-right">
@@ -858,7 +873,6 @@ function MAIN() {
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(alignProgram);
   setTimeout(alignProgram, 600);
   applyZoom();
-  if (window.innerWidth < 700) document.getElementById('z2').click();
   function deskOfRow(r) { var v = r && r.children[2] ? r.children[2].textContent.trim() : ''; return /^[0-9]+$/.test(v) ? v : ''; }
   // the person row sitting at desk n now (by the Seat column), else the row with that id
   function rowOfDesk(n) {
