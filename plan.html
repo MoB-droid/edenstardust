@@ -52,6 +52,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .planwrap { overflow: auto; border: 1px solid var(--line); background: var(--plan); border-radius: 4px; max-height: 82vh; display: flex; }
 #plan { display: block; flex: none; width: 100%; height: auto; margin: auto; }
 #plan .bgimg { filter: var(--img-filter); opacity: var(--img-op); }
+/* thin black lines on the building shell and the core */
+#outlines path, #outlines rect { fill: none; stroke: #000000; stroke-width: 2; stroke-linejoin: miter; pointer-events: none; }
 .dk rect { fill: var(--tc, var(--desk)); fill-opacity: 1; stroke: var(--desk-edge); stroke-width: 1.4; }
 .dk text { fill: var(--tci, var(--ink)); font: 600 15px var(--mono); text-anchor: middle; dominant-baseline: central; }
 .dk { cursor: pointer; }
@@ -371,7 +373,7 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
   <section class="stack">
     <div class="bar brand">
       <img class="logo" src="logo.png" alt="">
-      <h2 id="ltitle" class="ltitle" data-def="Layout · New floor" title="Double-click to edit">Layout · New floor</h2>
+      <h2 id="ltitle" class="ltitle" data-def="Layout · New floor" title="Click to rename" role="button" tabindex="0">Layout · New floor</h2>
     </div>
     <div class="planwrap" id="wrap">
       <svg id="plan" data-ext="0 0 2400 1700" viewBox="-250 -250 2900 2200" role="img" aria-labelledby="pt pd">
@@ -1505,8 +1507,65 @@ function MAIN() {
     });
     SHELL.near = near;
   }
-  readShell();
-  window.__shellReady = function () { readShell(); relayout(); };
+  // The floorplate (everything inside the building outline) is a very light warm white, a touch darker than the
+  // white around the building, so the building stands out. Drawn from the outline grid, multiplied over the plan picture.
+  var FLOOR = [248, 247, 244];   // #F8F7F4
+  function paintFloor() {
+    var old = document.getElementById('floorplate'); if (old) old.remove();
+    if (!SHELL) return;
+    try {
+      var c = document.createElement('canvas'); c.width = SHELL.cols; c.height = SHELL.rows;
+      var ctx = c.getContext('2d'), im = ctx.createImageData(SHELL.cols, SHELL.rows), d = im.data;
+      for (var i = 0; i < SHELL.g.length; i++) {
+        var inside = SHELL.g[i] !== 1;
+        d[i * 4] = inside ? FLOOR[0] : 255; d[i * 4 + 1] = inside ? FLOOR[1] : 255; d[i * 4 + 2] = inside ? FLOOR[2] : 255; d[i * 4 + 3] = 255;
+      }
+      ctx.putImageData(im, 0, 0);
+      var el = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+      el.setAttribute('id', 'floorplate');
+      el.setAttribute('href', c.toDataURL('image/png'));
+      el.setAttribute('x', SHELL.x); el.setAttribute('y', SHELL.y);
+      el.setAttribute('width', SHELL.cols * SHELL.cell); el.setAttribute('height', SHELL.rows * SHELL.cell);
+      el.setAttribute('preserveAspectRatio', 'none');
+      el.setAttribute('style', 'mix-blend-mode: multiply; pointer-events: none');
+      document.getElementById('bgwrap').appendChild(el);
+    } catch (e) {}
+    paintOutlines();
+  }
+  // thin black lines: the building's outer edge (shell, from the outline grid) and the core (its outline box)
+  function paintOutlines() {
+    var old = document.getElementById('outlines'); if (old) old.remove();
+    if (!SHELL) return;
+    var C = SHELL.cols, R = SHELL.rows, G = SHELL.g, cs = SHELL.cell, X = SHELL.x, Y = SHELL.y;
+    function ins(cx, cy) { return cx >= 0 && cy >= 0 && cx < C && cy < R && G[cy * C + cx] !== 1; }
+    var d = [];
+    // horizontal edges: between row cy-1 and cy, merged along the row
+    for (var cy = 0; cy <= R; cy++) {
+      var start = -1;
+      for (var cx = 0; cx <= C; cx++) {
+        var edge = cx < C && ins(cx, cy - 1) !== ins(cx, cy);
+        if (edge && start < 0) start = cx;
+        if (!edge && start >= 0) { d.push('M' + (X + start * cs) + ' ' + (Y + cy * cs) + 'H' + (X + cx * cs)); start = -1; }
+      }
+    }
+    // vertical edges: between column cx-1 and cx, merged down the column
+    for (var vx = 0; vx <= C; vx++) {
+      var st = -1;
+      for (var vy = 0; vy <= R; vy++) {
+        var ed = vy < R && ins(vx - 1, vy) !== ins(vx, vy);
+        if (ed && st < 0) st = vy;
+        if (!ed && st >= 0) { d.push('M' + (X + vx * cs) + ' ' + (Y + st * cs) + 'V' + (Y + vy * cs)); st = -1; }
+      }
+    }
+    var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('id', 'outlines');
+    var html = '<path class="shell-line" d="' + d.join('') + '"/>';
+    if (CORE) html += '<rect class="core-line" x="' + CORE[0] + '" y="' + CORE[1] + '" width="' + (CORE[2] - CORE[0]) + '" height="' + (CORE[3] - CORE[1]) + '"/>';
+    g.innerHTML = html;
+    document.getElementById('bgwrap').appendChild(g);
+  }
+  readShell(); paintFloor();
+  window.__shellReady = function () { readShell(); paintFloor(); relayout(); };
   function cellAt(x, y) {
     var cx = Math.floor((x - SHELL.x) / SHELL.cell), cy = Math.floor((y - SHELL.y) / SHELL.cell);
     if (cx < 0 || cy < 0 || cx >= SHELL.cols || cy >= SHELL.rows) return 1;
@@ -2175,7 +2234,7 @@ function MAIN() {
       });
     });
   }
-  var STYLE_PROPS = ['fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linejoin', 'opacity', 'display', 'visibility', 'font-family', 'font-size', 'font-weight', 'letter-spacing', 'text-anchor', 'dominant-baseline', 'paint-order', 'filter'];
+  var STYLE_PROPS = ['fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linejoin', 'opacity', 'display', 'visibility', 'font-family', 'font-size', 'font-weight', 'letter-spacing', 'text-anchor', 'dominant-baseline', 'paint-order', 'filter', 'mix-blend-mode'];
   // ---- The layout picture: a header (logo, title, option number, date, edenstardust.com) at the top left, then the
   // high-level summary (total / used / available and every team in its colour with its number of people), then the plan.
   // Each layout picture made gets the next option number (saved in meta / option, field n).
@@ -2331,7 +2390,8 @@ function MAIN() {
     } else { try { localStorage.setItem(LS + ':title', JSON.stringify(titleVal)); } catch (e) {} }
   }
   window.__saveTitle = saveTitle;
-  ltitle.addEventListener('dblclick', function () {
+  ltitle.addEventListener('keydown', function (e) { if ((e.key === 'Enter' || e.key === ' ') && !ltitle.querySelector('input')) { e.preventDefault(); ltitle.click(); } });
+  ltitle.addEventListener('click', function () {
     if (ltitle.querySelector('input')) return;
     var inp = document.createElement('input'); inp.type = 'text'; inp.id = 'ed-title'; inp.value = titleVal || ltitle.dataset.def;
     inp.setAttribute('aria-label', 'Layout title');
