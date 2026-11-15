@@ -86,6 +86,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .totrow .tot { position: absolute !important; width: 1px; height: 1px; overflow: hidden; visibility: hidden; pointer-events: none; }
 main > section.stack:last-child > .totrow:first-child { margin: 0 !important; height: 0; }
 .summ { display: grid; gap: 10px; margin-top: 4px; }
+.ctrls > .ctrl-left, .ctrls > .summ { flex: 1 0 100%; }
 .sum-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .sum-stats .st { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
 .sum-stats .st b { font: 700 clamp(24px, 3.2vw, 38px)/1 var(--display); color: var(--fg); font-variant-numeric: tabular-nums; }
@@ -277,7 +278,9 @@ main > section.stack { display: grid; gap: 10px; }
 .delbtn:hover { color: var(--clash) !important; border-color: var(--clash) !important; }
 .ctrl-left { border-color: var(--btn-soft) !important; }
 /* left controls: two separate boxes, VIEW (Fit / 2× / 3×) and actions (big Suggest + Undo icon) */
-.ctrl-left { display: flex; flex-direction: column; align-items: stretch; gap: 12px; border: 0 !important; padding: 0; background: none; }
+.ctrl-left { display: flex; flex-direction: row; flex-wrap: wrap; align-items: stretch; gap: 12px; border: 0 !important; padding: 0; background: none; }
+.ctrl-left > .cgroup { flex: 1 1 auto; }
+.ctrl-left > .actgrp { align-items: center; }
 .cgroup { border: 1px solid var(--btn-soft); border-radius: 8px; padding: 8px; background: var(--paper); }
 .viewgrp { display: grid; gap: 6px; }
 .cglabel { font: 600 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding-left: 2px; }
@@ -359,7 +362,6 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
     <div class="totrow">
   <h2 class="tot"><span class="ti">Total seats: <span id="tottot">0</span><span class="sep">·</span></span><span class="ti">Used: <span id="totused">0</span><span class="sep">·</span></span><span class="ti">Available: <span id="totfree">0</span></span></h2>
     </div>
-    <div class="summ" id="summ"></div>
     <div class="ctrls">
       <div class="ctrl-left">
         <div class="cgroup viewgrp">
@@ -375,6 +377,7 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
           <button type="button" id="undo" class="undo big tip" data-tip="undo last change" disabled aria-label="Undo last change"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
         </div>
       </div>
+      <div class="summ" id="summ"></div>
       <div class="ctrl-right">
         <div class="cgroup rgrp"><span class="cglabel">Layout</span>
         <div class="btnrow"><button type="button" id="uplayout" class="undo tip span3" data-tip="update or replace the floor plan (PDF or image)" aria-label="Upload layout">Upload<br>layout</button></div>
