@@ -47,15 +47,17 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .dk.hi rect { fill: var(--pill); fill-opacity: 1; stroke: var(--accent); stroke-width: 3; }
 .dk.hi text { fill: var(--pill-ink); }
 .team rect { fill: var(--tc, var(--pill)); }
-.team text { fill: var(--tci, var(--pill-ink)); font: 600 42px var(--display); text-anchor: middle; dominant-baseline: central; letter-spacing: .02em; }
+/* no letter-spacing on plan text: Safari then draws Hebrew letters one by one, left to right (reversed) */
+.team text { fill: var(--tci, var(--pill-ink)); font: 600 24px var(--display); text-anchor: middle; dominant-baseline: central; letter-spacing: normal; unicode-bidi: plaintext; }
 .team { cursor: pointer; }
 .team:focus-visible { outline: none; }
 .team:focus-visible rect { stroke: var(--accent); stroke-width: 5; }
-.team[aria-pressed="true"] rect { stroke: var(--accent); stroke-width: 3; }
+.team[aria-pressed="true"] rect { stroke: var(--fg); stroke-width: 4; }
 .lead.on { stroke: var(--fg); opacity: 1; stroke-width: 4; }
 /* a shaded team or person: its desks keep the team colour and get a thick black frame */
 .dk.th rect, .dk.ts rect { fill-opacity: 1; stroke: var(--fg); stroke-width: 5; }
-.team text.tname { fill: var(--fg); font: 600 42px var(--display); letter-spacing: .02em; paint-order: stroke; stroke: var(--plan); stroke-width: 8px; stroke-linejoin: round; }
+/* the team name is written inside the coloured pill, so the name under it is not shown */
+.team text.tname { display: none; fill: var(--fg); font: 600 42px var(--display); letter-spacing: .02em; paint-order: stroke; stroke: var(--plan); stroke-width: 8px; stroke-linejoin: round; }
 .team[aria-pressed="true"] text.tname { fill: var(--fg); }
 .tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .team { touch-action: none; cursor: grab; }
@@ -85,11 +87,18 @@ main > section.stack:last-child > .totrow:first-child { margin: 0 !important; he
 .sum-bar i { display: block; height: 100%; border-radius: inherit; background: var(--btn); }
 .sum-bar.over i { background: var(--clash); }
 .sum-cap { display: flex; justify-content: space-between; gap: 10px; font: 500 12px var(--mono); color: var(--muted); }
-.sum-teams { list-style: none; margin: 2px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; max-height: 210px; overflow: auto; }
+.sum-teams { list-style: none; margin: 2px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
 .sum-teams li { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); font-size: 13px; }
-.sum-teams .tno { flex: none; font: 600 11px var(--mono); color: var(--tci, var(--btn-ink)); background: var(--tc, var(--btn)); border-radius: 5px; padding: 2px 6px; }
-.sum-teams .tnm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
-.sum-teams .tct { flex: none; font: 700 14px var(--mono); color: var(--fg); font-variant-numeric: tabular-nums; }
+/* team list: every team one equal-width block in its colour, name and number of people centred inside; tap = shade it */
+.sum-teams li.tb { padding: 0; border: 0; background: none; }
+.sum-teams .tbtn { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 8px 10px; border: 3px solid transparent; border-radius: 8px;
+  background: var(--tc, var(--bg)); color: var(--tci, var(--fg)); font: 500 14px var(--display); cursor: pointer; text-align: center; }
+.sum-teams .tbtn .tnm { flex: 0 1 auto; background: none; padding: 0; color: inherit; white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.25; }
+.sum-teams .tbtn .tct { margin-left: 0; color: inherit; }
+.sum-teams .tbtn[aria-pressed="true"] { border-color: var(--fg); }
+.sum-teams .tno { flex: none; width: 16px; height: 16px; background: var(--tc, var(--btn)); border-radius: 4px; }
+.sum-teams .tnm { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tci, var(--fg)); background: var(--tc, transparent); border-radius: 6px; padding: 3px 10px; font-weight: 500; }
+.sum-teams .tct { flex: none; margin-left: auto; font: 700 14px var(--mono); color: var(--fg); font-variant-numeric: tabular-nums; }
 .tot { font-size: 18px; line-height: 1.2; white-space: nowrap; flex: 1 0 100%; min-width: 0; overflow: hidden; }
 main > section.stack > * { min-width: 0; }
 main > section.stack:last-child > .totrow:first-child { margin-top: 11px; }
@@ -177,8 +186,8 @@ main > section.stack { display: grid; gap: 10px; }
 .seats tr.gh td.cnt { font-weight: 600; cursor: text; }
 .cnt input { font: 600 14px var(--mono); width: 5em; padding: 4px 6px; margin: -5px 0; border: 1px solid var(--accent); border-radius: 4px; background: var(--paper); color: var(--fg); }
 .seats tr.gh td { background: var(--bg); }
-/* each team's colour as a bar at the start of its row in PROGRAM */
-.seats tr.gh td:first-child { box-shadow: inset 6px 0 0 var(--tc, transparent); }
+/* PROGRAM team rows: no T-number, the team name sits inside the team's colour */
+.seats .tchip { display: block; text-align: center; min-width: 120px; box-sizing: border-box; background: var(--tc, transparent); color: var(--tci, var(--fg)); padding: 3px 10px; border-radius: 6px; font-weight: 500; }
 .hint { text-transform: none; letter-spacing: 0; font-weight: 400; }
 .nm { min-width: 180px; cursor: text; }
 .nm input { font: 14px var(--display); width: 100%; padding: 4px 8px; margin: -5px 0; border: 1px solid var(--accent); border-radius: 4px; background: var(--paper); color: var(--fg); }
@@ -270,7 +279,7 @@ main > section.stack { display: grid; gap: 10px; }
 .ctrl-left > .cgroup { flex: 1 1 auto; }
 .ctrl-left > .actgrp { align-items: center; }
 .cgroup { border: 1px solid var(--btn-soft); border-radius: 8px; padding: 8px; background: var(--paper); }
-.viewgrp { display: grid; gap: 6px; }
+.viewgrp { display: grid; gap: 6px; align-content: start; }
 .cglabel { font: 600 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding-left: 2px; }
 .viewgrp .zoom { display: flex; }
 .viewgrp .zoom button { flex: 1 1 0; }
@@ -279,6 +288,22 @@ main > section.stack { display: grid; gap: 10px; }
 .ctrl-left #suggest { flex: 1 1 auto; width: auto; height: 54px; font-size: 19px; font-weight: 600; }
 .ctrl-left #undo { flex: none; width: 54px; height: 54px; min-width: 0; padding: 0; display: grid; place-items: center; }
 #undo svg { width: 24px; height: 24px; display: block; }
+/* one bar, no title: Upload layout · Upload program · Link sheet · Update sheet, side by side, equal widths */
+.ctrl-right .rgrp { flex-wrap: nowrap; }
+.ctrl-right .rgrp .undo, .ctrl-right .rgrp .sheetwrap { flex: 1 1 0; min-width: 0; width: auto !important; }
+.ctrl-right .rgrp .sheetwrap #sheet { width: 100% !important; }
+.ctrls > .ctrl-right { flex: 1 0 100%; margin-left: 0; }
+.ctrl-right .rgrp .undo, .ctrl-right .rgrp #sheet { font-size: 14px !important; }
+/* Reshare (program) under Suggest, same size; Share (program) under Undo, same size (icon only) */
+.ctrl-left .actgrp { display: grid; grid-template-columns: minmax(0, 1fr) 54px; gap: 8px; align-items: stretch; }
+.ctrl-left #exp-xlsx { height: 54px; margin: 0; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 19px; font-weight: 600; border-radius: 8px; }
+.ctrl-left #exp-xlsx .dest { width: auto; height: auto; border: 0; background: none; }
+.ctrl-left #exp-xlsx .dest svg { width: 24px; height: 24px; }
+.ctrl-left #exp-xlsx .dest .pc { fill: currentColor; }
+.ctrl-left #exp-xlsx .dest svg[fill="none"] { stroke: currentColor; }
+.ctrl-left .actgrp .sheetwrap { display: block; }
+.ctrl-left #chg-program { width: 54px; height: 54px; min-width: 0; padding: 0; display: grid; place-items: center; border-radius: 8px; }
+.ctrl-left #chg-program .shareic { width: 24px; height: 24px; display: block; }
 /* phones and narrow screens: the plan scrolls inside its own frame, so keep that frame short enough that the
    page around it (buttons, PROGRAM) stays reachable with a swipe */
 @media (max-width: 1199px) { .planwrap { max-height: 55vh; overscroll-behavior: auto; } }
@@ -363,19 +388,18 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
         <div class="cgroup actgrp">
           <button type="button" id="suggest" class="undo big" aria-label="Suggest a seating">Suggest</button>
           <button type="button" id="undo" class="undo big tip" data-tip="undo last change" disabled aria-label="Undo last change"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+          <button type="button" id="exp-xlsx" class="undo rsh2 tip" data-tip="send the layout picture and the program again to the same place" aria-label="Reshare the layout and the program">Reshare<span class="dest" id="dest-program" role="img"></span></button>
+          <span class="sheetwrap"><button type="button" id="chg-program" class="undo chg2 tip" data-tip="choose where to send the layout picture and the program, then send them" aria-label="Share the layout and the program"><svg class="shareic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M8 10H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-2"/></svg></button></span>
         </div>
       </div>
       <div class="summ" id="summ"></div>
       <div class="ctrl-right">
-        <div class="cgroup rgrp"><span class="cglabel">Layout</span>
+        <div class="cgroup rgrp">
         <div class="btnrow"><button type="button" id="uplayout" class="undo tip span3" data-tip="update or replace the floor plan (PDF or image)" aria-label="Upload layout">Upload<br>layout</button></div>
         <input type="file" id="layfile" accept=".pdf,.png,.jpg,.jpeg" hidden>
-        <div class="btnrow"><span class="sheetwrap"><button type="button" id="chg-layout" class="undo chg tip" data-tip="choose where to send the layout picture, then send it" aria-label="Share the layout">Share<svg class="shareic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M8 10H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-2"/></svg></button></span><button type="button" id="exp-png" class="undo rsh tip" data-tip="send the layout picture again to the same place" aria-label="Reshare the layout">Reshare<span class="dest" id="dest-layout" role="img"></span></button></div>
-        </div>
-        <div class="cgroup rgrp"><span class="cglabel">Program</span>
+        <div class="btnrow" hidden><span class="sheetwrap"><button type="button" id="chg-layout" class="undo chg tip" data-tip="choose where to send the layout picture, then send it" aria-label="Share the layout">Share<svg class="shareic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M8 10H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-2"/></svg></button></span><button type="button" id="exp-png" class="undo rsh tip" data-tip="send the layout picture again to the same place" aria-label="Reshare the layout">Reshare<span class="dest" id="dest-layout" role="img"></span></button></div>
         <div class="btnrow trio"><button type="button" id="upload" class="undo tip" data-tip="add teams from an Excel or CSV file (Claude reads it)" aria-label="Upload program">Upload<br>program</button><span class="sheetwrap"><button type="button" id="sheet" class="undo tip" data-tip="take the program from a Google Sheet (it stays linked)" aria-label="Link a Google Sheet">Link<br>sheet</button></span><button type="button" id="sheet-up" class="undo tip" data-tip="update the program from the linked Google Sheet" aria-label="Update from the Google Sheet" disabled>Update<br>sheet</button></div>
         <input type="file" id="upfile" accept=".csv,.xlsx,.xls,.txt" hidden>
-        <div class="btnrow"><span class="sheetwrap"><button type="button" id="chg-program" class="undo chg tip" data-tip="choose where to send the program (Excel), then send it" aria-label="Share the program">Share<svg class="shareic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M8 10H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-2"/></svg></button></span><button type="button" id="exp-xlsx" class="undo rsh tip" data-tip="send the program again to the same place" aria-label="Reshare the program">Reshare<span class="dest" id="dest-program" role="img"></span></button></div>
         </div>
 </div>
       </div>
@@ -1053,7 +1077,7 @@ function MAIN() {
   // the editable cells (team names, people's names, seats needed) show what is saved
   function paintEds() {
     document.querySelectorAll('.ed').forEach(function (c) {
-      if (!c.querySelector('input')) { var v0 = store[c.dataset.k][c.dataset.id] || c.dataset.def || ''; var s0 = c.dataset.k === 'need' ? v0 : cap(v0); if (c.textContent !== s0) c.textContent = s0; }
+      if (!c.querySelector('input')) { var v0 = store[c.dataset.k][c.dataset.id] || c.dataset.def || ''; var s0 = c.dataset.k === 'need' ? v0 : cap(v0); if (c.textContent !== s0 || (c.dataset.k === 'teams' && s0 && !c.querySelector('.tchip'))) { if (c.dataset.k === 'teams' && s0) { c.textContent = ''; var chip = document.createElement('span'); chip.className = 'tchip'; chip.textContent = s0; c.appendChild(chip); } else c.textContent = s0; } }
     });
   }
   // names on desks: the person who sits at each desk now (from the program rows), else a name typed for that seat
@@ -1231,6 +1255,7 @@ function MAIN() {
     document.querySelectorAll('.lead[data-t="' + t + '"]').forEach(function (l) { l.classList.toggle('on', on); });
     var grp = document.querySelector('tbody.grp[data-t="' + t + '"]');
     if (grp) grp.classList.toggle('on', on);
+    document.querySelectorAll('#summ .tbtn[data-t="' + t + '"]').forEach(function (b) { b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
   }
   function shadeTeam(g) {
     var on = g.getAttribute('aria-pressed') !== 'true';
@@ -1583,6 +1608,57 @@ function MAIN() {
       taken.push(p);
     });
   }
+  // Markers never touch each other or the building: each marker (pill + "seats short") keeps a clear space from the
+  // building outline (or the desks' area when the outline was not read) and from every other marker. A marker that
+  // would touch moves straight outwards, away from the building, until it is clear; its dashed line follows it.
+  var SHELL_GAP = 60, MARK_GAP = 40;
+  function svgBox(el) {
+    var r = el.getBoundingClientRect(), m = plan.getScreenCTM(); if (!m || !r.width || !r.height) return null;
+    var inv = m.inverse(), p = plan.createSVGPoint();
+    p.x = r.left; p.y = r.top; var a = p.matrixTransform(inv); p.x = r.right; p.y = r.bottom; var b = p.matrixTransform(inv);
+    return { x0: Math.min(a.x, b.x), y0: Math.min(a.y, b.y), x1: Math.max(a.x, b.x), y1: Math.max(a.y, b.y) };
+  }
+  function hitsBuilding(b) {
+    var x0 = b.x0 - SHELL_GAP, y0 = b.y0 - SHELL_GAP, x1 = b.x1 + SHELL_GAP, y1 = b.y1 + SHELL_GAP;
+    if (!SHELL) return x0 < EXT[2] && x1 > EXT[0] && y0 < EXT[3] && y1 > EXT[1];
+    for (var y = y0; y <= y1 + 0.1; y += Math.min(16, y1 - y0 || 16)) for (var x = x0; x <= x1 + 0.1; x += Math.min(16, x1 - x0 || 16)) if (cellAt(x, y) !== 1) return true;
+    return false;
+  }
+  function hitsBox(b, o) { return b.x0 - MARK_GAP < o.x1 && b.x1 + MARK_GAP > o.x0 && b.y0 - MARK_GAP < o.y1 && b.y1 + MARK_GAP > o.y0; }
+  function clearMarkers() {
+    var list = [];
+    document.querySelectorAll('#teams .team').forEach(function (g) {
+      if (g.style.display === 'none' || g.dataset.t === dragT) return;
+      var pl = null; PLACED.forEach(function (q) { if (q.g === g) pl = q; });
+      var side = pl ? pl.side : null, b = markerBase(g);
+      if (!side) side = b.x < EXT[0] ? 'W' : b.x > EXT[2] ? 'E' : b.y < EXT[1] ? 'N' : b.y > EXT[3] ? 'S' : 'I';
+      list.push({ g: g, side: side, lead: document.querySelector('#teams .lead[data-t="' + g.dataset.t + '"]') });
+    });
+    var done = [];
+    if (dragT) { var dg = document.querySelector('#teams .team[data-t="' + dragT + '"]'), db0 = dg && svgBox(dg); if (db0) done.push(db0); }
+    list.forEach(function (m) {
+      var dir = { N: [0, -1], S: [0, 1], W: [-1, 0], E: [1, 0], I: [0, 1] }[m.side] || [0, 1];
+      var box = svgBox(m.g); if (!box) return;
+      var dx = 0, dy = 0, guard = 0;
+      function bad(b) { return (m.side !== 'I' && hitsBuilding(b)) || done.some(function (o) { return hitsBox(b, o); }); }
+      while (guard++ < 120 && bad({ x0: box.x0 + dx, y0: box.y0 + dy, x1: box.x1 + dx, y1: box.y1 + dy })) { dx += dir[0] * 24; dy += dir[1] * 24; }
+      if (dx || dy) {
+        var tr = /translate\(([-\d.e]+)[ ,]+([-\d.e]+)\)/.exec(m.g.getAttribute('transform') || ''), tx = tr ? +tr[1] : 0, ty = tr ? +tr[2] : 0;
+        m.g.setAttribute('transform', 'translate(' + (tx + dx).toFixed(1) + ' ' + (ty + dy).toFixed(1) + ')');
+        box = { x0: box.x0 + dx, y0: box.y0 + dy, x1: box.x1 + dx, y1: box.y1 + dy };
+      }
+      // the dashed line starts at the pill edge facing the building
+      var pr = m.g.querySelector('rect'), pb = pr && svgBox(pr);
+      if (m.lead && pb && m.lead.style.display !== 'none') {
+        var cx = (pb.x0 + pb.x1) / 2, cy = (pb.y0 + pb.y1) / 2;
+        if (m.side === 'N') { m.lead.setAttribute('x1', cx.toFixed(1)); m.lead.setAttribute('y1', pb.y1.toFixed(1)); }
+        else if (m.side === 'S') { m.lead.setAttribute('x1', cx.toFixed(1)); m.lead.setAttribute('y1', pb.y0.toFixed(1)); }
+        else if (m.side === 'W') { m.lead.setAttribute('x1', pb.x1.toFixed(1)); m.lead.setAttribute('y1', cy.toFixed(1)); }
+        else if (m.side === 'E') { m.lead.setAttribute('x1', pb.x0.toFixed(1)); m.lead.setAttribute('y1', cy.toFixed(1)); }
+      }
+      done.push(box);
+    });
+  }
   function relayout() {
     PLACED = [];
     syncAdded();
@@ -1599,9 +1675,16 @@ function MAIN() {
       paintColor(document.querySelector('#teams .team[data-t="' + t + '"]'), teamColor(shownNo));
       paintColor(document.querySelector('tbody.grp[data-t="' + t + '"]'), teamColor(shownNo));
       var mk = document.querySelector('#teams .team[data-t="' + t + '"] text:not(.tname):not(.short)');
-      if (mk && mk.textContent !== lab) mk.textContent = lab;
+      // the pill shows the team name (T-number only while the team has no name), sized to fit it
+      var nmT = cap(store.teams[t] || '').trim() || lab;
+      if (mk && mk.textContent !== nmT) {
+        mk.textContent = nmT;
+        if (/[֐-׿؀-ۿ]/.test(nmT)) mk.setAttribute('direction', 'rtl'); else mk.removeAttribute('direction');
+        var pr = mk.parentNode.querySelector('rect');
+        if (pr) { try { var pw = Math.max(110, mk.getComputedTextLength() + 48), pcx = +pr.getAttribute('x') + +pr.getAttribute('width') / 2; pr.setAttribute('x', (pcx - pw / 2).toFixed(1)); pr.setAttribute('width', pw.toFixed(1)); } catch (e) {} }
+      }
       var fb = document.querySelector('tbody.grp[data-t="' + t + '"] .fold');
-      if (fb && fb.lastChild.nodeType === 3 && fb.lastChild.nodeValue !== lab) fb.lastChild.nodeValue = lab;
+      if (fb) { fb.dataset.lab = lab; fb.setAttribute('aria-label', 'Open or close team ' + lab); if (fb.lastChild.nodeType === 3 && fb.lastChild.nodeValue !== '') fb.lastChild.nodeValue = ''; }
     });
     teamIds.forEach(function (t) {
       var all = Array.prototype.slice.call(document.querySelectorAll('#desks .dk[data-t="' + t + '"]'));
@@ -1625,7 +1708,7 @@ function MAIN() {
         return;
       }
       var tnc = grp && grp.querySelector('.tn');
-      teamSum.push({ no: noOf[t], name: cap(store.teams[t] || (tnc && !tnc.querySelector('input') ? tnc.textContent : '') || '').trim(), n: need });
+      teamSum.push({ t: t, no: noOf[t], name: cap(store.teams[t] || (tnc && !tnc.querySelector('input') ? tnc.textContent : '') || '').trim(), n: need });
       var asg = !mv && store.assign[t] ? store.assign[t] : null;
       if (asg) {
         mine = asg.map(function (id) { return deskBy[id]; }).filter(Boolean).slice(0, need);
@@ -1714,6 +1797,7 @@ function MAIN() {
       else if (!c) d.classList.add('free');   // unused: white with the desk outline
     });
     spreadMarkers();
+    clearMarkers();
     fitView();
     paintShade();
     // a selected person (orange row) and a selected desk follow the person to their desk now
@@ -1741,6 +1825,7 @@ function MAIN() {
   }
   // Program summary: seats used / available as tiles and a bar, then every group with its number of people
   function renderSummary(total, used, teams) {
+    window.__lastSum = { total: total, used: used, teams: teams };
     var el = document.getElementById('summ'); if (!el) return;
     var free = Math.max(0, total - used), pct = total ? Math.round(used * 100 / total) : 0, over = used > total;
     var people = teams.reduce(function (a, x) { return a + (x.n || 0); }, 0);
@@ -1753,10 +1838,15 @@ function MAIN() {
       + '</div>'
       + (teams.length ? '<ul class="sum-teams">' + teams.map(function (x) {
           var col = teamColor(x.no);
-          return '<li><span class="tno" style="--tc:' + col.c + ';--tci:' + col.ink + '">T' + x.no + '</span><span class="tnm">' + esc(x.name || 'Group ' + x.no) + '</span><span class="tct">' + x.n + '</span></li>';
+          return '<li class="tb"><button type="button" class="tbtn" data-t="' + esc(x.t) + '" aria-pressed="' + (SHADED[x.t] ? 'true' : 'false') + '" style="--tc:' + col.c + ';--tci:' + col.ink + '"><span class="tnm">' + esc(x.name || 'Group ' + x.no) + '</span><span class="tct">' + x.n + '</span></button></li>';
         }).join('') + '</ul>' : '');
   }
   window.__relayout = relayout;
+  // tapping a team in the team list shades that team on the layout (tap again to clear)
+  document.getElementById('summ').addEventListener('click', function (e) {
+    var b = e.target.closest('.tbtn'); if (!b) return;
+    shade(b.dataset.t, b.getAttribute('aria-pressed') !== 'true');
+  });
   function svgPt(e) {
     var p = plan.createSVGPoint(); p.x = e.clientX; p.y = e.clientY;
     return p.matrixTransform(plan.getScreenCTM().inverse());
@@ -2073,37 +2163,95 @@ function MAIN() {
     });
   }
   var STYLE_PROPS = ['fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linejoin', 'opacity', 'display', 'visibility', 'font-family', 'font-size', 'font-weight', 'letter-spacing', 'text-anchor', 'dominant-baseline', 'paint-order', 'filter'];
-  document.getElementById('exp-png').addEventListener('click', function () {
-    if (window.__driveWarm) window.__driveWarm('layout');
-    closeExp();
-    var svg = document.getElementById('plan'), clone = svg.cloneNode(true);
-    var src = svg.querySelectorAll('*'), dst = clone.querySelectorAll('*');
-    for (var i = 0; i < src.length; i++) {
-      var cs = getComputedStyle(src[i]), st = '';
-      STYLE_PROPS.forEach(function (k) { var v = cs.getPropertyValue(k); if (v) st += k + ':' + v + ';'; });
-      dst[i].setAttribute('style', st);
-    }
-    var vb = svg.viewBox.baseVal, scale = 2, W = Math.round(vb.width * scale), H = Math.round(vb.height * scale);
-    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); clone.setAttribute('width', W); clone.setAttribute('height', H);
-    clone.removeAttribute('style');
-    var url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml' }));
-    var img = new Image();
-    img.onload = function () {
-      var c = document.createElement('canvas'); c.width = W; c.height = H;
-      var ctx = c.getContext('2d'); ctx.fillStyle = getComputedStyle(document.body).backgroundColor || '#ffffff'; ctx.fillRect(0, 0, W, H);
-      ctx.drawImage(img, 0, 0, W, H); URL.revokeObjectURL(url);
-      c.toBlob(function (b) { if (b) offerFile(fileBase() + ' - layout.jpg', b, 'layout'); else layNote('Could not make the picture.'); }, 'image/jpeg', 0.92);
-    };
-    img.onerror = function () { URL.revokeObjectURL(url); layNote('Could not make the picture.'); };
-    img.src = url;
-  });
-  document.getElementById('exp-xlsx').addEventListener('click', function () {
-    if (window.__driveWarm) window.__driveWarm('program');
-    closeExp();
+  // ---- The layout picture: a header (logo, title, option number, date, edenstardust.com) at the top left, then the
+  // high-level summary (total / used / available and every team in its colour with its number of people), then the plan.
+  // Each layout picture made gets the next option number (saved in meta / option, field n).
+  var optNo = 0;
+  try { optNo = +(localStorage.getItem(LS + ':option') || 0) || 0; } catch (e) {}
+  window.__setOption = function (n) { if (isFinite(n) && n > optNo) optNo = n; };
+  function nextOption() {
+    optNo += 1;
+    if (db) db.collection('meta').doc('option').set({ n: optNo }).then(function () {}, function () {});
+    else { try { localStorage.setItem(LS + ':option', String(optNo)); } catch (e) {} }
+    return optNo;
+  }
+  function logoData() {
+    if (!window.fetch) return Promise.resolve(null);
+    return fetch('logo.png').then(function (r) { return r.ok ? r.blob() : null; }).then(function (b) {
+      if (!b) return null;
+      return new Promise(function (ok) { var fr = new FileReader(); fr.onload = function () { var im = new Image(); im.onload = function () { ok(im); }; im.onerror = function () { ok(null); }; im.src = fr.result; }; fr.onerror = function () { ok(null); }; fr.readAsDataURL(b); });
+    }).catch(function () { return null; });
+  }
+  function planImage() {
+    return new Promise(function (ok, bad) {
+      var svg = document.getElementById('plan'), clone = svg.cloneNode(true);
+      var src = svg.querySelectorAll('*'), dst = clone.querySelectorAll('*');
+      for (var i = 0; i < src.length; i++) {
+        var cs = getComputedStyle(src[i]), st = '';
+        STYLE_PROPS.forEach(function (k) { var v = cs.getPropertyValue(k); if (v) st += k + ':' + v + ';'; });
+        dst[i].setAttribute('style', st);
+      }
+      var vb = svg.viewBox.baseVal, W = Math.round(vb.width * 2), H = Math.round(vb.height * 2);
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); clone.setAttribute('width', W); clone.setAttribute('height', H);
+      clone.removeAttribute('style');
+      var url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml' }));
+      var img = new Image();
+      img.onload = function () { ok({ img: img, W: W, H: H, url: url }); };
+      img.onerror = function () { URL.revokeObjectURL(url); bad(new Error('svg')); };
+      img.src = url;
+    });
+  }
+  function rrect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+  function makeLayoutPicture() {
+    var sum = window.__lastSum || { total: 0, used: 0, teams: [] }, no = nextOption();
+    var day = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    var title = (titleVal || ltitle.dataset.def || 'Seat plan').trim();
+    return Promise.all([planImage(), logoData()]).then(function (res) {
+      var P = res[0], logo = res[1], W = P.W, k = W / 1600;
+      var F = '"IBM Plex Sans Condensed", "Arial Narrow", sans-serif', M = '"IBM Plex Mono", Menlo, monospace';
+      var pad = 48 * k, headH = 170 * k, cols = 4, gap = 14 * k, tileH = 110 * k, blockH = 64 * k;
+      var rows = Math.ceil(sum.teams.length / cols), sumH = tileH + (rows ? 24 * k + rows * blockH + (rows - 1) * gap : 0) + 40 * k;
+      var c = document.createElement('canvas'); c.width = W; c.height = Math.round(headH + sumH + P.H);
+      var ctx = c.getContext('2d');
+      ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, 0, c.width, c.height);
+      // header, top left: logo, title, option number and date, site
+      var x = pad, y = 36 * k;
+      if (logo) { ctx.drawImage(logo, x, y, 96 * k, 96 * k); x += 120 * k; }
+      ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left'; ctx.fillStyle = '#000000';
+      ctx.font = '600 ' + (40 * k) + 'px ' + F; ctx.fillText(title, x, y + 38 * k);
+      ctx.font = '600 ' + (28 * k) + 'px ' + F; ctx.fillText('Option ' + no + '  ·  ' + day, x, y + 76 * k);
+      ctx.fillStyle = '#6E6E6E'; ctx.font = '500 ' + (22 * k) + 'px ' + M; ctx.fillText('edenstardust.com', x, y + 108 * k);
+      ctx.fillStyle = '#BEAC6E'; ctx.fillRect(pad, headH - 6 * k, W - 2 * pad, 3 * k);
+      // summary: total / used / available
+      var top = headH + 20 * k, tw = (W - 2 * pad - 2 * gap) / 3;
+      [[sum.total, 'TOTAL SEATS', '#000000'], [sum.used, 'USED', '#000000'], [Math.max(0, sum.total - sum.used), 'AVAILABLE', '#BEAC6E']].forEach(function (t, i) {
+        var tx = pad + i * (tw + gap);
+        rrect(ctx, tx, top, tw, tileH - 10 * k, 14 * k); ctx.fillStyle = '#FFFFFF'; ctx.fill(); ctx.lineWidth = 2 * k; ctx.strokeStyle = '#E5E5E5'; ctx.stroke();
+        ctx.fillStyle = t[2]; ctx.font = '700 ' + (46 * k) + 'px ' + F; ctx.fillText(String(t[0]), tx + 22 * k, top + 52 * k);
+        ctx.fillStyle = '#6E6E6E'; ctx.font = '600 ' + (16 * k) + 'px ' + M; ctx.fillText(t[1], tx + 22 * k, top + 82 * k);
+      });
+      // every team in its colour, name and number of people centred
+      var bw = (W - 2 * pad - (cols - 1) * gap) / cols, by0 = top + tileH + 14 * k;
+      sum.teams.forEach(function (tm, i) {
+        var bx = pad + (i % cols) * (bw + gap), by = by0 + Math.floor(i / cols) * (blockH + gap), col = teamColor(tm.no);
+        rrect(ctx, bx, by, bw, blockH, 12 * k); ctx.fillStyle = col.c; ctx.fill();
+        ctx.fillStyle = col.ink; ctx.textBaseline = 'middle';
+        var nm = tm.name || ('Group ' + tm.no), cnt = String(tm.n), nf = '500 ' + (24 * k) + 'px ' + F, cf = '700 ' + (24 * k) + 'px ' + M;
+        ctx.font = nf; var nw = ctx.measureText(nm).width; ctx.font = cf; var cw = ctx.measureText(cnt).width, sp = 14 * k;
+        var maxN = bw - cw - sp - 28 * k; while (nw > maxN && nm.length > 1) { nm = nm.slice(0, -1); ctx.font = nf; nw = ctx.measureText(nm + '…').width; if (nw <= maxN) nm += '…'; }
+        var sx = bx + (bw - (nw + sp + cw)) / 2;
+        ctx.font = nf; ctx.fillText(nm, sx, by + blockH / 2); ctx.font = cf; ctx.fillText(cnt, sx + nw + sp, by + blockH / 2);
+        ctx.textBaseline = 'alphabetic';
+      });
+      ctx.drawImage(P.img, 0, headH + sumH, W, P.H); URL.revokeObjectURL(P.url);
+      return new Promise(function (ok, bad) { c.toBlob(function (b) { if (b) ok(b); else bad(new Error('jpg')); }, 'image/jpeg', 0.92); });
+    });
+  }
+  function makeProgramXlsx() {
     var rows = [['Team', 'Team name', 'Seats needed', '#', 'Name', 'Type', 'Seat']];
     document.querySelectorAll('#srows tbody.grp').forEach(function (g) {
       if (g.classList.contains('gone')) return;
-      rows.push([g.querySelector('.fold').textContent.trim(), g.querySelector('.tn').textContent.trim(), +(g.querySelector('.cnt').textContent || 0), '', '', '', '']);
+      rows.push([g.querySelector('.fold').dataset.lab || '', g.querySelector('.tn').textContent.trim(), +(g.querySelector('.cnt').textContent || 0), '', '', '', '']);
       g.querySelectorAll('tr.m').forEach(function (r) {
         if (r.classList.contains('unused') || r.classList.contains('pgone')) return;
         var seat = r.children[2].textContent.trim();
@@ -2111,13 +2259,47 @@ function MAIN() {
         rows.push(['', '', '', +r.children[0].textContent, r.children[1].textContent.trim(), ty, /^[0-9]+$/.test(seat) ? +seat : seat]);
       });
     });
-    loadXLSX().then(function (X) {
+    return loadXLSX().then(function (X) {
       var ws = X.utils.aoa_to_sheet(rows), wb = X.utils.book_new();
       ws['!cols'] = [{ wch: 8 }, { wch: 24 }, { wch: 13 }, { wch: 5 }, { wch: 28 }, { wch: 6 }, { wch: 7 }];
       X.utils.book_append_sheet(wb, ws, 'Program');
-      var out = X.write(wb, { bookType: 'xlsx', type: 'array' });
-      offerFile(fileBase() + ' - program.xlsx', new Blob([out]), 'program');
-    }, function () { layNote('Could not make the Excel file.'); });
+      return new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    });
+  }
+  // send several files to the place chosen for this kind (share menu, Google Drive or this computer)
+  function deliverMany(list, kind) {
+    var to = destOf(kind).to;
+    if (to === 'app' && navigator.share && navigator.canShare) {
+      var files; try { files = list.map(function (f) { return new File([f.blob], f.name, { type: f.blob.type || 'application/octet-stream' }); }); } catch (e) { files = null; }
+      var data = files && { files: files, title: fileBase() };
+      if (data && navigator.canShare(data)) {
+        navigator.share(data).then(function () { layNote(''); }, function (e) {
+          if (e && e.name === 'AbortError') return;
+          if (e && e.name === 'NotAllowedError') { tapToShare(data); return; }
+          layNote('Could not open the share menu. Try again.');
+        });
+        return;
+      }
+      layNote('This device cannot send these files to apps, so they are downloaded instead.');
+    }
+    if (window.__driveSave && onDrive(kind) && onSite() && GSHEET.apiKey) { list.forEach(function (f) { window.__driveSave(f.name, f.blob, kind); }); return; }
+    list.reduce(function (p, f) { return p.then(function () { return downloadFile(f.name, f.blob); }); }, Promise.resolve());
+  }
+  // layout picture only (kept for the layout destination)
+  document.getElementById('exp-png').addEventListener('click', function () {
+    if (window.__driveWarm) window.__driveWarm('layout');
+    closeExp();
+    makeLayoutPicture().then(function (b) { offerFile(fileBase() + ' - layout.jpg', b, 'layout'); }, function () { layNote('Could not make the picture.'); });
+  });
+  // Share / Reshare under Suggest: the layout picture and the program Excel together
+  document.getElementById('exp-xlsx').addEventListener('click', function () {
+    if (window.__driveWarm) window.__driveWarm('program');
+    closeExp();
+    layNote('Making the layout picture and the program…', true);
+    Promise.all([makeLayoutPicture(), makeProgramXlsx()]).then(function (r) {
+      layNote('');
+      deliverMany([{ name: fileBase() + ' - layout.jpg', blob: r[0] }, { name: fileBase() + ' - program.xlsx', blob: r[1] }], 'program');
+    }, function () { layNote('Could not make the files.'); });
   });
   // ---- Layout title: double-click to rename (saved in db collection "meta", doc "title").
   var ltitle = document.getElementById('ltitle'), titleVal = null;
@@ -2149,7 +2331,7 @@ function MAIN() {
   if (window.claude && window.claude.use) window.claude.use('db').then(function (d) {
     if (!d) return;
     d.collection('meta').onSnapshot(function (snap) {
-      var v = null, sh = null, fo = null, de = null; snap.docs.forEach(function (doc) { var b = doc.data(); if (doc.id === 'title' && b && b.name) v = String(b.name); if (doc.id === 'sheet' && b && b.id) sh = b; if (doc.id === 'folder' && b && b.id) fo = b; if (doc.id === 'dest' && b) de = b; });
+      var v = null, sh = null, fo = null, de = null; snap.docs.forEach(function (doc) { var b = doc.data(); if (doc.id === 'title' && b && b.name) v = String(b.name); if (doc.id === 'sheet' && b && b.id) sh = b; if (doc.id === 'folder' && b && b.id) fo = b; if (doc.id === 'dest' && b) de = b; if (doc.id === 'option' && b && window.__setOption) window.__setOption(+b.n); });
       if (window.__setSheetMeta) window.__setSheetMeta(sh);
       if (window.__setDest) window.__setDest(de, fo);
       titleVal = v; paintTitle();
@@ -2639,7 +2821,7 @@ function MAIN() {
       if (open && open.dataset.kind === kind) return;
       var d = destOf(kind), drive = onDrive(kind), app = d.to === 'app', known = d.folder || lastFolder();
       var m = document.createElement('div'); m.className = 'sheetmenu'; m.dataset.kind = kind; m.setAttribute('role', 'menu');
-      m.innerHTML = '<div class="sm-name">Share the ' + kind + ' to</div>'
+      m.innerHTML = '<div class="sm-name">Share the ' + (kind === 'program' ? 'layout and the program' : kind) + ' to</div>'
         + '<button type="button" role="menuitemradio" class="opt" data-a="pc" aria-checked="' + (!drive && !app) + '">' + ICON_PC + '<span>This computer</span></button>'
         + '<button type="button" role="menuitemradio" class="opt" data-a="drive" aria-checked="' + !!drive + '">' + ICON_DRIVE + '<span class="dn"></span></button>'
         + '<button type="button" role="menuitemradio" class="opt" data-a="app" aria-checked="' + app + '">' + ICON_APP + '<span>WhatsApp, Mail &amp; other apps</span></button>'
