@@ -5,7 +5,7 @@
   /* Layout: one full-bleed canvas of drifting dust with astronaut monkeys hopping between bright stars; quiet caption bottom-left. Single deliberate dark look. */
   :root {
     --void: #05060d;
-    --dust-warm: #f3d9a4;
+    --dust-warm: #BEAC6E;
     --dust-cool: #9fb8ff;
     --text: #e9e6f2;
     --muted: #8a87a3;
@@ -46,7 +46,7 @@
   .tagline { text-align: center; text-transform: none; letter-spacing: 0.02em; font-size: 0.85rem; }
   .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 10px; background: rgba(223, 230, 255, 0.06); }
   .tabs button { font: 500 0.85rem var(--body); color: var(--muted); background: transparent; border: 0; border-radius: 7px; padding: 8px; cursor: pointer; }
-  .tabs button[aria-selected="true"] { background: rgba(243, 217, 164, 0.16); color: var(--text); }
+  .tabs button[aria-selected="true"] { background: rgba(190, 172, 110, 0.22); color: var(--text); }
   .field { display: grid; gap: 6px; }
   .field label { font-size: 0.78rem; color: var(--muted); }
   .field input {
@@ -55,7 +55,7 @@
   }
   .field input:focus { outline: 2px solid var(--dust-warm); outline-offset: 1px; border-color: transparent; }
   .primary {
-    font: 500 0.95rem var(--body); color: #1a1408; background: var(--dust-warm);
+    font: 500 0.95rem var(--body); color: #000000; background: var(--dust-warm);
     border: 0; border-radius: 9px; padding: 12px; cursor: pointer;
   }
   .primary:disabled { opacity: 0.6; cursor: wait; }
@@ -95,7 +95,7 @@
   .share label { font-size: 0.78rem; color: var(--muted); }
   .share-row { display: flex; gap: 8px; }
   .share-row select { flex: 1 1 auto; min-width: 0; font: 400 0.85rem var(--body); color: var(--text); background: rgba(5, 6, 13, 0.6); border: 1px solid rgba(223, 230, 255, 0.18); border-radius: 8px; padding: 8px 10px; }
-  .share-row button { font: 500 0.85rem var(--body); color: #1a1408; background: var(--dust-warm); border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+  .share-row button { font: 500 0.85rem var(--body); color: #000000; background: var(--dust-warm); border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
   .share-row button:disabled { opacity: 0.5; cursor: default; }
   .share .msg { text-align: left; min-height: 0; margin: 0; }
   .share-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 0.82rem; }
@@ -112,17 +112,13 @@
   .chip.google { background: rgba(243, 217, 164, 0.16); color: var(--dust-warm); }
   .bar button { font: 500 0.8rem var(--body); color: var(--text); background: rgba(223, 230, 255, 0.08); border: 1px solid rgba(223, 230, 255, 0.18); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
 
-  /* Dashboard ("My seat plans"): the Seat Plan look — IBM Plex, butterfly-blue buttons, white tiles. */
+  /* Dashboard ("My seat plans"): the Seat Plan look — IBM Plex, brand palette (gold #BEAC6E, black, greys #E5E5E5 / #F7F7F7, white). */
   :root {
-    --d-bg: #F6F2E9; --d-paper: #ffffff; --d-fg: #18202a; --d-muted: #5d6874; --d-line: #d5dce3;
-    --d-btn: #144878; --d-btn-hover: #0e3659; --d-btn-ink: #ffffff; --d-soft: #dbeaf7; --d-red: #b42318;
+    --d-bg: #F7F7F7; --d-paper: #FFFFFF; --d-fg: #000000; --d-muted: #6E6E6E; --d-line: #E5E5E5; --d-accent: #BEAC6E;
+    --d-btn: #000000; --d-btn-hover: #333333; --d-btn-ink: #FFFFFF; --d-soft: #F7F7F7; --d-red: #b42318;
     --d-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
     --d-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
   }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) { --d-bg: #11161b; --d-paper: #171d23; --d-fg: #e3e8ed; --d-muted: #97a2ae; --d-line: #2b343d; --d-soft: #1f3448; --d-red: #ff8a7a; }
-  }
-  :root[data-theme="dark"] { --d-bg: #11161b; --d-paper: #171d23; --d-fg: #e3e8ed; --d-muted: #97a2ae; --d-line: #2b343d; --d-soft: #1f3448; --d-red: #ff8a7a; }
   body.inside canvas, body.inside .caption { display: none; }
   .dash {
     position: fixed; inset: 0; z-index: 10; overflow-y: auto; background: var(--d-bg); color: var(--d-fg); font-family: var(--d-display);
@@ -130,7 +126,7 @@
     padding-block: calc(24px + env(safe-area-inset-top, 0px)) calc(48px + env(safe-area-inset-bottom, 0px));
   }
   .dash-in { max-width: 1280px; margin: 0 auto; display: grid; gap: 24px; }
-  .dash-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; border-bottom: 2px solid var(--d-fg); padding-bottom: 14px; }
+  .dash-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; border-bottom: 2px solid var(--d-accent); padding-bottom: 14px; }
   .dash-brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
   .dash-brand svg { width: 44px; height: 44px; flex: none; }
   .dash-brand .brandlogo { width: 48px; height: 48px; flex: none; background: #fff; border-radius: 12px; padding: 3px; box-sizing: border-box; }
@@ -143,7 +139,7 @@
   .dash-note { margin: 0; color: var(--d-muted); font-size: 0.95rem; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 16px; }
   .tile { position: relative; display: grid; grid-template-rows: auto 1fr; background: var(--d-paper); border: 1px solid var(--d-line); border-radius: 8px; overflow: hidden; min-width: 0; }
-  .tile:hover { border-color: var(--d-btn); box-shadow: 0 6px 20px rgba(20, 72, 120, 0.12); }
+  .tile:hover { border-color: var(--d-accent); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08); }
   .tile .open { display: contents; color: inherit; text-decoration: none; }
   .tile .thumb { aspect-ratio: 4 / 3; max-width: 100%; background: #ffffff; display: grid; place-items: center; border-bottom: 1px solid var(--d-line); overflow: hidden; }
   .tile .thumb img { width: 100%; height: 100%; object-fit: contain; }
@@ -157,8 +153,8 @@
   .tile .open:focus-visible .thumb { outline: 3px solid var(--d-btn); outline-offset: -3px; }
   .tile .del:focus-visible, .newtile:focus-visible, .dash .bar button:focus-visible { outline: 2px solid var(--d-btn); outline-offset: 2px; }
   .newtile { display: grid; place-items: center; align-content: center; gap: 6px; min-height: 220px; background: transparent; border: 2px dashed var(--d-line); border-radius: 8px; color: var(--d-btn); font: 600 1.1rem var(--d-display); cursor: pointer; }
-  .newtile:hover { border-color: var(--d-btn); background: var(--d-soft); }
-  .newtile .plus { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--d-btn); color: #ffffff; font: 500 1.6rem/1 var(--d-mono); }
+  .newtile:hover { border-color: var(--d-accent); background: var(--d-paper); }
+  .newtile .plus { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--d-btn); color: var(--d-btn-ink); font: 500 1.6rem/1 var(--d-mono); }
   .newtile:disabled { opacity: 0.6; cursor: wait; }
   .sample-tag { font: 600 0.7rem var(--d-mono); color: var(--d-muted); text-transform: uppercase; letter-spacing: 0.06em; }
   .entries { z-index: 30; }
@@ -171,7 +167,7 @@
   body.inside .entries-scroll { border-top-color: var(--d-line); }
   body.inside .share { background: var(--d-bg); border-color: var(--d-line); }
   body.inside .share-row select { background: var(--d-paper); color: var(--d-fg); border-color: var(--d-line); }
-  body.inside .share-row button { background: var(--d-btn); color: #ffffff; }
+  body.inside .share-row button { background: var(--d-btn); color: var(--d-btn-ink); }
   body.inside .entries-head .icon-btn:hover, body.inside .entries-head .icon-btn[aria-expanded="true"] { color: var(--d-btn); background: var(--d-soft); }
   body.inside .share .msg.ok { color: #1d7a3e; }
   body.inside .share .msg.error, body.inside .share-list button { color: var(--d-red); }
