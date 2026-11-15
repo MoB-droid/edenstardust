@@ -16,23 +16,12 @@
 <style>
 /* Layout: zoomable plan with numbered desks and team markers outside the shell, then one foldable seats table. */
 :root {
-  --bg: #F6F2E9; --paper: #ffffff; --fg: #18202a; --muted: #5d6874; --line: #d5dce3;
-  --desk: #9fd0f5; --desk-edge: #3b88c4; --ink: #0b2c47; --accent: #1d5f9b; --pill: #18202a; --pill-ink: #ffffff;
-  --clash: #d92d20; --clash-ink: #5c0d06; --team-hi: #f28c1c; --team-hi-ink: #2a1600; --plan: #ffffff; --img-filter: none; --img-op: .55;
+  /* brand palette (Stardust guidelines): gold #BEAC6E, black #000000, greys #E5E5E5 / #F7F7F7, white #FFFFFF */
+  --bg: #F7F7F7; --paper: #FFFFFF; --fg: #000000; --muted: #6E6E6E; --line: #E5E5E5;
+  --desk: #E5E5E5; --desk-edge: #8C8C8C; --ink: #000000; --accent: #BEAC6E; --pill: #000000; --pill-ink: #FFFFFF;
+  --clash: #d92d20; --clash-ink: #5c0d06; --team-hi: #BEAC6E; --team-hi-ink: #000000; --plan: #FFFFFF; --img-filter: none; --img-op: .55;
   --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #11161b; --paper: #171d23; --fg: #e3e8ed; --muted: #97a2ae; --line: #2b343d;
-    --desk: #6fb4e8; --desk-edge: #9fd0f5; --ink: #06243b; --accent: #7ab6ea; --pill: #e3e8ed; --pill-ink: #11161b;
-    --plan: #0d1115; --img-filter: invert(1) hue-rotate(180deg); --img-op: .5; color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #11161b; --paper: #171d23; --fg: #e3e8ed; --muted: #97a2ae; --line: #2b343d;
-  --desk: #6fb4e8; --desk-edge: #9fd0f5; --ink: #06243b; --accent: #7ab6ea; --pill: #e3e8ed; --pill-ink: #11161b;
-  --plan: #0d1115; --img-filter: invert(1) hue-rotate(180deg); --img-op: .5; color-scheme: dark;
 }
 * { box-sizing: border-box; }
 body { background: var(--bg); color: var(--fg); font-family: var(--display); font-size: 15px; line-height: 1.45;
@@ -58,35 +47,34 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .planwrap.pmoving, .planwrap.pmoving * { cursor: grabbing !important; user-select: none; }
 .dk.src rect { opacity: .45; }
 .dk.drop rect { fill: var(--btn-off); fill-opacity: 1; stroke: var(--btn); stroke-width: 4; }
-.pdrag { position: fixed; z-index: 60; pointer-events: none; background: #144878; color: #ffffff; font: 600 13px var(--display); padding: 5px 10px; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.2); white-space: nowrap; }
+.pdrag { position: fixed; z-index: 60; pointer-events: none; background: var(--btn); color: var(--btn-ink); font: 600 13px var(--display); padding: 5px 10px; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.2); white-space: nowrap; }
 .planwrap.panning, .planwrap.panning * { cursor: grabbing !important; user-select: none; }
 .planwrap { overflow: auto; border: 1px solid var(--line); background: var(--plan); border-radius: 4px; max-height: 82vh; display: flex; }
 #plan { display: block; flex: none; width: 100%; height: auto; margin: auto; }
 #plan .bgimg { filter: var(--img-filter); opacity: var(--img-op); }
-.dk rect { fill: var(--desk); fill-opacity: .85; stroke: var(--desk-edge); stroke-width: 1.4; }
-.dk text { fill: var(--ink); font: 600 15px var(--mono); text-anchor: middle; dominant-baseline: central; }
+.dk rect { fill: var(--tc, var(--desk)); fill-opacity: 1; stroke: var(--desk-edge); stroke-width: 1.4; }
+.dk text { fill: var(--tci, var(--ink)); font: 600 15px var(--mono); text-anchor: middle; dominant-baseline: central; }
 .dk { cursor: pointer; }
 .dk text.pn { font: 600 15px var(--display); }
-.dk.hi rect { fill: var(--accent); fill-opacity: 1; stroke: var(--fg); stroke-width: 3; }
-.dk.hi text { fill: #ffffff; }
-.team rect { fill: var(--pill); }
-.team text { fill: var(--pill-ink); font: 600 42px var(--display); text-anchor: middle; dominant-baseline: central; letter-spacing: .02em; }
+.dk.hi rect { fill: var(--pill); fill-opacity: 1; stroke: var(--accent); stroke-width: 3; }
+.dk.hi text { fill: var(--pill-ink); }
+.team rect { fill: var(--tc, var(--pill)); }
+.team text { fill: var(--tci, var(--pill-ink)); font: 600 42px var(--display); text-anchor: middle; dominant-baseline: central; letter-spacing: .02em; }
 .team { cursor: pointer; }
 .team:focus-visible { outline: none; }
 .team:focus-visible rect { stroke: var(--accent); stroke-width: 5; }
-.team[aria-pressed="true"] rect { fill: var(--team-hi); stroke: var(--fg); stroke-width: 3; }
-.team[aria-pressed="true"] text { fill: var(--team-hi-ink); }
-.lead.on { stroke: var(--team-hi); opacity: 1; stroke-width: 4; }
-.dk.th rect, .dk.ts rect { fill: var(--team-hi); fill-opacity: 1; stroke: var(--team-hi-ink); stroke-width: 3; }
-.dk.th text, .dk.ts text { fill: var(--team-hi-ink); }
+.team[aria-pressed="true"] rect { stroke: var(--accent); stroke-width: 3; }
+.lead.on { stroke: var(--fg); opacity: 1; stroke-width: 4; }
+/* a shaded team or person: its desks keep the team colour and get a thick black frame */
+.dk.th rect, .dk.ts rect { fill-opacity: 1; stroke: var(--fg); stroke-width: 5; }
 .team text.tname { fill: var(--fg); font: 600 42px var(--display); letter-spacing: .02em; paint-order: stroke; stroke: var(--plan); stroke-width: 8px; stroke-linejoin: round; }
 .team[aria-pressed="true"] text.tname { fill: var(--fg); }
 .tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .team { touch-action: none; cursor: grab; }
 .team.drag { cursor: grabbing; }
-.dk.mv rect { fill: var(--desk); fill-opacity: 1; stroke: var(--clash); stroke-width: 2.5; stroke-dasharray: 6 4; }
+.dk.mv rect { fill: var(--tc, var(--desk)); fill-opacity: 1; stroke: var(--clash); stroke-width: 2.5; stroke-dasharray: 6 4; }
 /* a shaded team or person shows orange also on free desks it took (dashed) */
-.dk.mv.th rect, .dk.mv.ts rect { fill: var(--team-hi); stroke: var(--team-hi-ink); stroke-width: 3; stroke-dasharray: none; }
+.dk.mv.th rect, .dk.mv.ts rect { stroke: var(--fg); stroke-width: 5; stroke-dasharray: none; }
 .dk.empty rect { fill: none; stroke: var(--clash); stroke-width: 2.5; }
 .dk.empty text { display: none; }
 .dk.ov rect, .dk.ov.th rect, .dk.ov.ts rect { fill: var(--clash); fill-opacity: .92; stroke: var(--clash-ink); stroke-width: 2.5; }
@@ -104,14 +92,14 @@ main > section.stack:last-child > .totrow:first-child { margin: 0 !important; he
 .sum-stats .st b { font: 700 clamp(24px, 3.2vw, 38px)/1 var(--display); color: var(--fg); font-variant-numeric: tabular-nums; }
 .sum-stats .st span { font: 600 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .sum-stats .st.used b { color: var(--btn-line-ink); }
-.sum-stats .st.free b { color: #a8924f; }
+.sum-stats .st.free b { color: var(--accent); }
 .sum-bar { height: 12px; border-radius: 999px; background: var(--btn-off); overflow: hidden; }
 .sum-bar i { display: block; height: 100%; border-radius: inherit; background: var(--btn); }
 .sum-bar.over i { background: var(--clash); }
 .sum-cap { display: flex; justify-content: space-between; gap: 10px; font: 500 12px var(--mono); color: var(--muted); }
 .sum-teams { list-style: none; margin: 2px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; max-height: 210px; overflow: auto; }
 .sum-teams li { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); font-size: 13px; }
-.sum-teams .tno { flex: none; font: 600 11px var(--mono); color: var(--btn-ink); background: var(--btn); border-radius: 5px; padding: 2px 6px; }
+.sum-teams .tno { flex: none; font: 600 11px var(--mono); color: var(--tci, var(--btn-ink)); background: var(--tc, var(--btn)); border-radius: 5px; padding: 2px 6px; }
 .sum-teams .tnm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
 .sum-teams .tct { flex: none; font: 700 14px var(--mono); color: var(--fg); font-variant-numeric: tabular-nums; }
 .tot { font-size: 18px; line-height: 1.2; white-space: nowrap; flex: 1 0 100%; min-width: 0; overflow: hidden; }
@@ -200,7 +188,9 @@ main > section.stack { display: grid; gap: 10px; }
 .fold[aria-expanded="true"] .car { transform: rotate(90deg); }
 .seats tr.gh td.cnt { font-weight: 600; cursor: text; }
 .cnt input { font: 600 14px var(--mono); width: 5em; padding: 4px 6px; margin: -5px 0; border: 1px solid var(--accent); border-radius: 4px; background: var(--paper); color: var(--fg); }
-.seats tr.gh td { background: color-mix(in srgb, var(--fg) 4%, transparent); }
+.seats tr.gh td { background: var(--bg); }
+/* each team's colour as a bar at the start of its row in PROGRAM */
+.seats tr.gh td:first-child { box-shadow: inset 6px 0 0 var(--tc, transparent); }
 .hint { text-transform: none; letter-spacing: 0; font-weight: 400; }
 .nm { min-width: 180px; cursor: text; }
 .nm input { font: 14px var(--display); width: 100%; padding: 4px 8px; margin: -5px 0; border: 1px solid var(--accent); border-radius: 4px; background: var(--paper); color: var(--fg); }
@@ -273,10 +263,8 @@ main > section.stack { display: grid; gap: 10px; }
 .prognote { margin: 0; color: var(--muted); font-size: 14px; max-width: 640px; }
 .tn[data-flag]::after { content: "  ⚠ " attr(data-flag); color: var(--clash); font: 500 12px var(--display); white-space: nowrap; }
 .notes { margin: 0; padding-left: 20px; color: var(--muted); font-size: 13px; display: grid; gap: 4px; max-width: 75ch; }
-/* buttons use the logo colours: blue #144878, light blue #9fd0f5, white */
-:root { --btn: #144878; --btn-hover: #0e3659; --btn-ink: #ffffff; --btn-soft: #9fd0f5; --btn-off: #dbeaf7; --btn-off-ink: #6f8ba3; --btn-line-ink: #144878; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --btn-off: #1f3448; --btn-off-ink: #7f9bb3; --btn-line-ink: #9fd0f5; } }
-:root[data-theme="dark"] { --btn-off: #1f3448; --btn-off-ink: #7f9bb3; --btn-line-ink: #9fd0f5; }
+/* buttons use the brand palette: black buttons, gold frames, grey when off */
+:root { --btn: #000000; --btn-hover: #333333; --btn-ink: #FFFFFF; --btn-soft: #BEAC6E; --btn-off: #E5E5E5; --btn-off-ink: #8C8C8C; --btn-line-ink: #000000; }
 .undo { background: var(--btn) !important; color: var(--btn-ink) !important; border-color: var(--btn) !important; }
 .undo:hover:not(:disabled) { background: var(--btn-hover) !important; border-color: var(--btn-hover) !important; }
 .undo:disabled { background: var(--btn-off) !important; color: var(--btn-off-ink) !important; border-color: var(--btn-off) !important; }
@@ -422,18 +410,31 @@ if (window.__edenLS) EMBED.lskey = window.__edenLS;
 // ---- Layout data. The plan is drawn from EMBED (built by Claude) or, when newer, from the automatic
 // analysis of an uploaded PDF saved in the database (doc plan/current). Upload layout runs that analysis here.
 var LAYOUT = null, ANALYZING = false;
-// Team markers (pill + name + "seats short") are drawn 1.6× around their own center.
-var MK_SCALE = 1.6;
+// Team colours: soft Stardust tones only. The range is cream #EADEC8, sand #E3BA82, peach #E4C5A9 and stone #BFB8A8;
+// every other tone sits between them or is lighter, never darker. Hues alternate so teams next to each other differ.
+var TEAM_COLORS = ['#E3BA82', '#EADEC8', '#E4C5A9', '#BFB8A8', '#E8CD9E', '#D9CFBF', '#EBD3BE', '#CEC6B4', '#E6C394', '#F0E6D4', '#DDBFA0', '#D3CBB8', '#EDD9B8', '#E9CDB6', '#C9C1AF', '#F2E2C9'];
+var TEAM_INK = TEAM_COLORS.map(function () { return '#000000'; });
+function teamColor(no) { var i = (no - 1) % TEAM_COLORS.length; return { c: TEAM_COLORS[i], ink: TEAM_INK[i] }; }
+function paintColor(el, col) { if (!el) return; if (col) { el.style.setProperty('--tc', col.c); el.style.setProperty('--tci', col.ink); } else { el.style.removeProperty('--tc'); el.style.removeProperty('--tci'); } }
+// Team markers: the pill (T1, T2…) is drawn 3.2× around its own center, big enough to grab and drag;
+// the team name and "seats short" under it are drawn 1.6×.
+var MK_SCALE = 3.2, LB_SCALE = 1.6;
 function scaleMarkers() {
   document.querySelectorAll('#teams .team').forEach(function (g) {
     if (g.querySelector(':scope > g.mkr')) return;
     var r = g.querySelector('rect'); if (!r) return;
     var cx = +r.getAttribute('x') + +r.getAttribute('width') / 2, cy = +r.getAttribute('y') + +r.getAttribute('height') / 2;
-    var w = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    w.setAttribute('class', 'mkr');
-    w.setAttribute('transform', 'translate(' + cx + ' ' + cy + ') scale(' + MK_SCALE + ') translate(' + (-cx) + ' ' + (-cy) + ')');
-    while (g.firstChild) w.appendChild(g.firstChild);
-    g.appendChild(w);
+    function grp(cls, k) {
+      var w = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      w.setAttribute('class', cls);
+      w.setAttribute('transform', 'translate(' + cx + ' ' + cy + ') scale(' + k + ') translate(' + (-cx) + ' ' + (-cy) + ')');
+      return w;
+    }
+    var w = grp('mkr', MK_SCALE), lb = grp('mkl', LB_SCALE);
+    Array.prototype.slice.call(g.childNodes).forEach(function (n) {
+      (n.classList && (n.classList.contains('tname') || n.classList.contains('short')) ? lb : w).appendChild(n);
+    });
+    g.appendChild(w); g.appendChild(lb);
   });
 }
 window.__scaleMarkers = scaleMarkers;
@@ -470,15 +471,15 @@ function renderLayout(L) {
     var ds = teams[t], b = [Infinity, Infinity, -Infinity, -Infinity];
     ds.forEach(function (e) { b[0] = Math.min(b[0], e.r[0]); b[1] = Math.min(b[1], e.r[1]); b[2] = Math.max(b[2], e.r[2]); b[3] = Math.max(b[3], e.r[3]); });
     var side = (L.sides && L.sides[t]) || sideOf(E, b), cx, y;
-    if (side === 'N') { cx = (b[0] + b[2]) / 2; y = Y0 - 60; }
-    else if (side === 'S') { cx = (b[0] + b[2]) / 2; y = Y1 + 70; }
-    else if (side === 'W') { cx = X0 - 100; y = (b[1] + b[3]) / 2; }
-    else if (side === 'E') { cx = X1 + 100; y = (b[1] + b[3]) / 2; }
-    else { cx = b[0] - 100; y = (b[1] + b[3]) / 2; }
+    if (side === 'N') { cx = (b[0] + b[2]) / 2; y = Y0 - 120; }
+    else if (side === 'S') { cx = (b[0] + b[2]) / 2; y = Y1 + 140; }
+    else if (side === 'W') { cx = X0 - 200; y = (b[1] + b[3]) / 2; }
+    else if (side === 'E') { cx = X1 + 200; y = (b[1] + b[3]) / 2; }
+    else { cx = b[0] - 200; y = (b[1] + b[3]) / 2; }
     return { t: t, b: b, side: side, cx: cx, y: y };
   });
   ['N', 'S', 'W', 'E'].forEach(function (sd) {
-    var horiz = sd === 'N' || sd === 'S', key = horiz ? 'cx' : 'y', gap = horiz ? 280 : 230;
+    var horiz = sd === 'N' || sd === 'S', key = horiz ? 'cx' : 'y', gap = horiz ? 560 : 460;
     var list = mk.filter(function (m) { return m.side === sd; }).sort(function (a, b) { return a[key] - b[key]; });
     for (var i = 1; i < list.length; i++) if (list[i][key] - list[i - 1][key] < gap) list[i][key] = list[i - 1][key] + gap;
   });
@@ -492,7 +493,7 @@ function renderLayout(L) {
     else if (side === 'E') lead = [cx - 60, y, b[2], cly];
     else lead = [cx + 47, y, b[0], cly];
     tm.push('<line class="lead" data-t="' + m.t + '" x1="' + f1(lead[0]) + '" y1="' + f1(lead[1]) + '" x2="' + f1(lead[2]) + '" y2="' + f1(lead[3]) + '"/>');
-    tm.push('<g class="team" data-t="' + m.t + '" role="button" tabindex="0" aria-pressed="false" aria-label="Shade team ' + lab + '"><rect x="' + f1(cx - tw / 2) + '" y="' + f1(y - 32) + '" width="' + f1(tw) + '" height="64" rx="32"/><text x="' + f1(cx) + '" y="' + f1(y) + '">' + lab + '</text><text class="tname" x="' + f1(cx) + '" y="' + f1(side === 'N' ? y - 68 : y + 68) + '"></text><text class="short" x="' + f1(cx) + '" y="' + f1(side === 'N' ? y - 122 : y + 122) + '"></text></g>');
+    tm.push('<g class="team" data-t="' + m.t + '" role="button" tabindex="0" aria-pressed="false" aria-label="Shade team ' + lab + '"><rect x="' + f1(cx - tw / 2) + '" y="' + f1(y - 32) + '" width="' + f1(tw) + '" height="64" rx="32"/><text x="' + f1(cx) + '" y="' + f1(y) + '">' + lab + '</text><text class="tname" x="' + f1(cx) + '" y="' + f1(side === 'N' ? y - 100 : y + 100) + '"></text><text class="short" x="' + f1(cx) + '" y="' + f1(side === 'N' ? y - 154 : y + 154) + '"></text></g>');
   });
   document.getElementById('teams').innerHTML = tm.join('');
   scaleMarkers();
@@ -507,7 +508,7 @@ function renderLayout(L) {
   document.getElementById('tottot').textContent = D.length;
   document.getElementById('totused').textContent = D.length;
   document.getElementById('totfree').textContent = 0;
-  document.getElementById('pd').textContent = (L.desc || 'Floor plan') + ' with all ' + D.length + ' workstation desks shaded light blue, numbered 1 to ' + D.length + ', and grouped into ' + order.filter(function (t) { return t !== '0'; }).length + ' teams.';
+  document.getElementById('pd').textContent = (L.desc || 'Floor plan') + ' with all ' + D.length + ' workstation desks coloured by team, numbered 1 to ' + D.length + ', and grouped into ' + order.filter(function (t) { return t !== '0'; }).length + ' teams.';
   if (L.heading) { var lt = document.getElementById('ltitle'); lt.dataset.def = L.heading; lt.textContent = L.heading; }
   // an uploaded plan picture: swap in an inline copy so "Export → Layout as picture" includes it
   if (L.img && !/^data:/.test(L.img) && window.fetch) fetch(window.__blobUrl ? window.__blobUrl(L.img) : L.img).then(function (r) { return r.ok ? r.blob() : null; }).then(function (b) {
@@ -1296,18 +1297,18 @@ function MAIN() {
       var g = document.querySelector('#teams .team[data-t="' + t + '"]');
       if (!g) {
         // park it in the bottom margin, 220 pt apart, skipping spots taken by other markers
-        var cy = EXT[3] + 70, cx = EXT[0] + 90, taken2 = [];
+        var cy = EXT[3] + 140, cx = EXT[0] + 180, taken2 = [];
         document.querySelectorAll('#teams .team').forEach(function (o) {
           var r = o.querySelector('rect'); if (!r || o.style.display === 'none') return;
           var ox = +r.getAttribute('x') + +r.getAttribute('width') / 2, oy = +r.getAttribute('y') + 32;
-          if (Math.abs(oy - cy) < 60) taken2.push(ox);
+          if (Math.abs(oy - cy) < 120) taken2.push(ox);
         });
-        while (taken2.some(function (ox) { return Math.abs(ox - cx) < 340; })) cx += 340;
-        if (cx > EXT[2] + 150) { cx = EXT[0] - 100; cy = EXT[3] - 60 - k * 140; }
+        while (taken2.some(function (ox) { return Math.abs(ox - cx) < 680; })) cx += 680;
+        if (cx > EXT[2] + 150) { cx = EXT[0] - 100; cy = EXT[3] - 120 - k * 280; }
         g = document.createElementNS(SVGNS, 'g');
         g.setAttribute('class', 'team'); g.setAttribute('data-t', t); g.setAttribute('data-added', '1');
         g.setAttribute('role', 'button'); g.setAttribute('tabindex', '0'); g.setAttribute('aria-pressed', 'false');
-        g.innerHTML = '<rect x="' + (cx - 60) + '" y="' + (cy - 32) + '" width="120" height="64" rx="32"></rect><text x="' + cx + '" y="' + cy + '">T</text><text class="tname" x="' + cx + '" y="' + (cy + 68) + '"></text><text class="short" x="' + cx + '" y="' + (cy + 122) + '"></text>';
+        g.innerHTML = '<rect x="' + (cx - 60) + '" y="' + (cy - 32) + '" width="120" height="64" rx="32"></rect><text x="' + cx + '" y="' + cy + '">T</text><text class="tname" x="' + cx + '" y="' + (cy + 100) + '"></text><text class="short" x="' + cx + '" y="' + (cy + 154) + '"></text>';
         var ln = document.createElementNS(SVGNS, 'line');
         ln.setAttribute('class', 'lead'); ln.setAttribute('data-t', t); ln.setAttribute('data-added', '1');
         ['x1', 'y1', 'x2', 'y2'].forEach(function (k) { ln.setAttribute(k, k[0] === 'x' ? cx : cy); });
@@ -1407,8 +1408,8 @@ function MAIN() {
     var b = markerBase(g), tn = g.querySelector('.tname'), sh = g.querySelector('.short'), r = g.querySelector('rect');
     var rx = r ? +r.getAttribute('x') : b.x, rw = r ? +r.getAttribute('width') : 0, a = align || 'middle';
     var lx = a === 'start' ? rx + 4 : a === 'end' ? rx + rw - 4 : b.x;
-    if (tn) { tn.setAttribute('y', (north ? b.y - 68 : b.y + 68).toFixed(1)); tn.setAttribute('x', lx.toFixed(1)); tn.style.textAnchor = a; }
-    if (sh) { sh.setAttribute('y', (north ? b.y - 122 : b.y + 122).toFixed(1)); sh.setAttribute('x', lx.toFixed(1)); sh.style.textAnchor = a; }
+    if (tn) { tn.setAttribute('y', (north ? b.y - 100 : b.y + 100).toFixed(1)); tn.setAttribute('x', lx.toFixed(1)); tn.style.textAnchor = a; }
+    if (sh) { sh.setAttribute('y', (north ? b.y - 154 : b.y + 154).toFixed(1)); sh.setAttribute('x', lx.toFixed(1)); sh.style.textAnchor = a; }
   }
   function resetMarker(g, lead) {
     g.removeAttribute('transform');
@@ -1436,11 +1437,11 @@ function MAIN() {
     }
     // side = building edge nearest the team's centre
     var dN = cy - EXT[1], dS = EXT[3] - cy, dW = cx - EXT[0], dE = EXT[2] - cx, m = Math.min(dN, dS, dW, dE);
-    if (m > 400) { tx = x0 - 100; ty = cy; L = [tx + 47, ty, x0, ty]; }
-    else if (m === dN) { tx = cx; ty = EXT[1] - 60; L = [tx, ty + 32, tx, y0]; }
-    else if (m === dS) { tx = cx; ty = EXT[3] + 70; L = [tx, ty - 32, tx, y1]; }
-    else if (m === dW) { tx = EXT[0] - 100; ty = cy; L = [tx + 60, ty, x0, ty]; }
-    else { tx = EXT[2] + 100; ty = cy; L = [tx - 60, ty, x1, ty]; }
+    if (m > 400) { tx = x0 - 200; ty = cy; L = [tx + 47, ty, x0, ty]; }
+    else if (m === dN) { tx = cx; ty = EXT[1] - 120; L = [tx, ty + 32, tx, y0]; }
+    else if (m === dS) { tx = cx; ty = EXT[3] + 140; L = [tx, ty - 32, tx, y1]; }
+    else if (m === dW) { tx = EXT[0] - 200; ty = cy; L = [tx + 60, ty, x0, ty]; }
+    else { tx = EXT[2] + 200; ty = cy; L = [tx - 60, ty, x1, ty]; }
     g.setAttribute('transform', 'translate(' + (tx - b.x).toFixed(1) + ' ' + (ty - b.y).toFixed(1) + ')');
     setLabels(g, m <= 400 && m === dN);
     PLACED.push({ g: g, lead: lead, side: m > 400 ? 'I' : m === dN ? 'N' : m === dS ? 'S' : m === dW ? 'W' : 'E', x: tx, y: ty, b: b, L: L });
@@ -1533,10 +1534,10 @@ function MAIN() {
     if (best) {
       // right outside the facade where the walk came out, with the line back to that desk
       var m = best.side, tx, ty, L;
-      if (m === 'N') { tx = best.x; ty = best.y - 60; L = [tx, ty + 32, tx, best.sy]; }
-      else if (m === 'S') { tx = best.x; ty = best.y + 70; L = [tx, ty - 32, tx, best.sy]; }
-      else if (m === 'W') { tx = best.x - 100; ty = best.y; L = [tx + 60, ty, best.sx, ty]; }
-      else { tx = best.x + 100; ty = best.y; L = [tx - 60, ty, best.sx, ty]; }
+      if (m === 'N') { tx = best.x; ty = best.y - 120; L = [tx, ty + 32, tx, best.sy]; }
+      else if (m === 'S') { tx = best.x; ty = best.y + 140; L = [tx, ty - 32, tx, best.sy]; }
+      else if (m === 'W') { tx = best.x - 200; ty = best.y; L = [tx + 60, ty, best.sx, ty]; }
+      else { tx = best.x + 200; ty = best.y; L = [tx - 60, ty, best.sx, ty]; }
       return { side: m, x: tx, y: ty, L: L, align: m === 'E' ? 'start' : m === 'W' ? 'end' : 'middle' };
     }
     if (!CORE) return null;
@@ -1559,7 +1560,7 @@ function MAIN() {
       if (sd) sides[sd].push({ fixed: true, x: b.x, y: b.y });
     });
     Object.keys(sides).forEach(function (sd) {
-      var horiz = sd === 'N' || sd === 'S', gap = horiz ? 280 : 230, list = sides[sd];
+      var horiz = sd === 'N' || sd === 'S', gap = horiz ? 560 : 460, list = sides[sd];
       var key = horiz ? 'x' : 'y';
       list.sort(function (a, c) { return a[key] - c[key]; });
       for (var i = 1; i < list.length; i++) {
@@ -1587,7 +1588,7 @@ function MAIN() {
     PLACED.forEach(function (p) { if (p.side !== 'I') taken.push(p); });
     PLACED.filter(function (p) { return p.side === 'I'; }).sort(function (a, c) { return a.y - c.y; }).forEach(function (p) {
       var y0 = p.y, guard = 0;
-      while (guard++ < 30 && taken.some(function (o) { return Math.abs(o.x - p.x) < 280 && Math.abs(o.y - p.y) < 230; })) p.y += 230;
+      while (guard++ < 30 && taken.some(function (o) { return Math.abs(o.x - p.x) < 560 && Math.abs(o.y - p.y) < 460; })) p.y += 460;
       if (p.y !== y0) {
         p.g.setAttribute('transform', 'translate(' + (p.x - p.b.x).toFixed(1) + ' ' + (p.y - p.b.y).toFixed(1) + ')');
         if (p.lead) { p.lead.setAttribute('y1', p.y.toFixed(1)); }
@@ -1608,6 +1609,8 @@ function MAIN() {
       if (store.deleted[t]) return;
       shownNo++; noOf[t] = shownNo;
       var lab = 'T' + shownNo;
+      paintColor(document.querySelector('#teams .team[data-t="' + t + '"]'), teamColor(shownNo));
+      paintColor(document.querySelector('tbody.grp[data-t="' + t + '"]'), teamColor(shownNo));
       var mk = document.querySelector('#teams .team[data-t="' + t + '"] text:not(.tname):not(.short)');
       if (mk && mk.textContent !== lab) mk.textContent = lab;
       var fb = document.querySelector('tbody.grp[data-t="' + t + '"] .fold');
@@ -1719,6 +1722,7 @@ function MAIN() {
     });
     allDesks.forEach(function (d) {
       var c = claim[d.dataset.s];
+      paintColor(d, c && c.length === 1 ? teamColor(noOf[c[0]]) : null);
       if (c && c.length > 1) { d.classList.remove('mv'); d.classList.add('ov'); }
       else if (!c) d.classList.add('free');   // unused: white with the desk outline
     });
@@ -1761,7 +1765,8 @@ function MAIN() {
       + '<div class="st free"><b>' + free + '</b><span>Available</span></div>'
       + '</div>'
       + (teams.length ? '<ul class="sum-teams">' + teams.map(function (x) {
-          return '<li><span class="tno">T' + x.no + '</span><span class="tnm">' + esc(x.name || 'Group ' + x.no) + '</span><span class="tct">' + x.n + '</span></li>';
+          var col = teamColor(x.no);
+          return '<li><span class="tno" style="--tc:' + col.c + ';--tci:' + col.ink + '">T' + x.no + '</span><span class="tnm">' + esc(x.name || 'Group ' + x.no) + '</span><span class="tct">' + x.n + '</span></li>';
         }).join('') + '</ul>' : '');
   }
   window.__relayout = relayout;
