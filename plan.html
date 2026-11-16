@@ -157,6 +157,13 @@ tbody.grp.gone { display: none; }
 .msgbar { min-height: 42px; box-sizing: border-box; margin: 10px 0 0; padding: 7px 14px; display: flex; flex-direction: column; justify-content: center; gap: 2px;
   background: var(--paper); border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 8px; transition: border-color .15s, background-color .15s; }
 .msgbar .saveerr { font: 600 15px var(--display); line-height: 1.35; }
+/* messy table: the message and the Download format button on one line */
+.msgbar > p { flex-shrink: 0; }
+/* rows of the right frame never shrink below their content (the frame scrolls instead) */
+main > section.stack:last-child { grid-auto-rows: max-content; }
+.msgbar:has(.messy:not([hidden])) { min-height: max-content; flex-shrink: 0; }
+.msgbar .messy { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.msgbar .messy .dlfmt { font: 600 14px var(--mono); height: 34px; padding: 0 14px; border-radius: 8px; margin: 0; }
 .msgbar:has(.saveerr:not([hidden]):not(.ok)) { border-color: color-mix(in srgb, var(--clash) 45%, var(--line)); border-left-color: var(--clash); background: color-mix(in srgb, var(--clash) 6%, var(--paper)); }
 .msgbar:has(#laymsg.ok:not([hidden])) { border-left-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .msgbar { transition: none; } }
@@ -422,6 +429,7 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
       <p class="saveerr" id="laymsg" hidden></p>
       <p class="saveerr" id="shortmsg" hidden></p>
       <p class="saveerr" id="saveerr" hidden></p>
+      <p class="saveerr messy" id="messymsg" hidden>Your table is messy. I can't understand the information in it. Please use my format. <button type="button" class="undo dlfmt" id="dlfmt">Download format</button></p>
     </div>
     <div class="totrow tabletitle"><h2>PROGRAM</h2></div>
     <p class="prognote" id="prognote" hidden></p>
@@ -1769,7 +1777,8 @@ function MAIN() {
       var short = document.querySelector('#teams .team[data-t="' + t + '"] .short');
       var rows = Array.prototype.slice.call(document.querySelectorAll('#srows tr.m[data-s]')).filter(function (r) { return r.parentNode.dataset.t === t; });
       rows = rows.filter(function (r) { if (store.gone[r.dataset.s]) { r.classList.add('pgone'); return false; } return true; });
-      rows.forEach(function (r, i) { r.children[0].textContent = i + 1; });
+      // people rows show no number in the # column (kept in data-no for the Excel)
+      rows.forEach(function (r, i) { r.dataset.no = i + 1; if (r.children[0].textContent !== '') r.children[0].textContent = ''; });
       var mine, gone = !!store.deleted[t], grp = document.querySelector('tbody.grp[data-t="' + t + '"]');
       g.style.display = gone ? 'none' : ''; if (lead) lead.style.display = gone ? 'none' : '';
       if (grp) grp.classList.toggle('gone', gone);
@@ -2328,7 +2337,7 @@ function MAIN() {
         if (r.classList.contains('unused') || r.classList.contains('pgone')) return;
         var seat = r.children[2].textContent.trim();
         var ty = store.ptype[r.dataset.s] || (/^[0-9]+$/.test(seat) ? (isSingleDesk(deskBy[seat]) ? 'S' : 'OS') : '');
-        rows.push(['', '', '', +r.children[0].textContent, r.children[1].textContent.trim(), ty, /^[0-9]+$/.test(seat) ? +seat : seat]);
+        rows.push(['', '', '', +(r.dataset.no || 0), r.children[1].textContent.trim(), ty, /^[0-9]+$/.test(seat) ? +seat : seat]);
       });
     });
     return loadXLSX().then(function (X) {
@@ -2499,7 +2508,7 @@ function MAIN() {
     var m = {}, hits = 0;
     for (var ti = 0; ti < w; ti++) {
       var tv = body.map(function (r) { return String(r[ti] === undefined ? '' : r[ti]).trim(); }).filter(Boolean);
-      if (tv.length && tv.every(function (v) { return /^(os|s|m|c)$/i.test(v); })) { m.ptype = ti; numeric[ti] = text[ti] = false; break; }
+      if (tv.length && tv.every(function (v) { return !!normType(v); })) { m.ptype = ti; numeric[ti] = text[ti] = false; break; }
     }
     first.forEach(function (c, i) {
       var k = kindOf(c); if (!k) return;
@@ -2521,7 +2530,15 @@ function MAIN() {
   }
   var SKIP = /^(total|sum|סה.?כ|סך הכל|סיכום|הערה)/i;
   // seat type from the program: OS = connected desk; S, M, C = single desks
-  function normType(v) { v = String(v || '').trim().toUpperCase(); return /^(OS|S|M|C)$/.test(v) ? v : ''; }
+  // desk type: the initials or the words of our format (Open space, Single, Manager, C-level), also in Hebrew
+  function normType(v) {
+    v = String(v || '').trim().toLowerCase().replace(/[\s_.-]+/g, ' ');
+    if (/^(os|open ?space|openspace|אופן ?ספייס|חלל פתוח)$/.test(v)) return 'OS';
+    if (/^(s|single|single desk|יחיד|בודד)$/.test(v)) return 'S';
+    if (/^(m|manager|מנהל|מנהלת)$/.test(v)) return 'M';
+    if (/^(c|c ?level|clevel|c ?suite|הנהלה|בכיר|בכירה)$/.test(v)) return 'C';
+    return '';
+  }
 
   // ---- Upload program: Claude reads the whole file (every sheet, messy tables, notes, totals) and returns the teams.
   // They are added at once and Suggest runs; a team Claude was unsure about shows a ⚠ note. Without Claude, the
@@ -2606,12 +2623,13 @@ function MAIN() {
       var g = byKey[key], pn = cell('person'), se = parseInt(cell('seats'), 10);
       var ty = normType(cell('ptype'));
       if (pn && !isNum(pn)) { g.people.push(pn); g.ptypes.push(ty); }
+      else if (m.seats === undefined) { g.blank = (g.blank || 0) + 1; g.stypes.push(ty); }   // our format: every row is one seat, a name is optional
       else if (se > 0 && ty) for (var q = 0; q < Math.min(se, 2000); q++) g.stypes.push(ty);
       // seats on person rows repeat the team size (keep the largest); on team rows they add up (a team split over rows)
       if (se > 0) g.seats = m.person !== undefined ? Math.max(g.seats, se) : g.seats + se;
     });
-    groups.forEach(function (g) { if (!g.seats && !g.people.length) g.flag = 'no seat count'; g.types = g.ptypes.concat(g.stypes); g.typesPeople = g.ptypes.length; });
-    return { teams: groups, ignored: ign, why: ign ? 'totals, notes or empty' : '' };
+    groups.forEach(function (g) { if (m.seats === undefined) g.seats = g.people.length + (g.blank || 0); if (!g.seats && !g.people.length) g.flag = 'no seat count'; g.types = g.ptypes.concat(g.stypes); g.typesPeople = g.ptypes.length; });
+    return { teams: groups, ignored: ign, why: ign ? 'totals, notes or empty' : '', header: mc.header };
   }
   function progNote(t) { var p = document.getElementById('prognote'); p.textContent = t || ''; p.hidden = !t; }
   function addProgram(res, fname, how) {
@@ -2653,6 +2671,45 @@ function MAIN() {
       (nFlag ? ' · ⚠ ' + nFlag + ' to check' : '') + ' · from ' + fname + (how ? ' · ' + how : '') + '.');
   }
   // read the tables of a file or a Google Sheet into teams (Claude first, else the column reader)
+  // a table is messy when no teams come out of it, most teams have no seat count and no people, or most rows were skipped
+  function isMessy(res, sheets) {
+    if (!res || !res.teams || !res.teams.length) return true;
+    var empty = res.teams.filter(function (t) { return !t.seats && !(t.people && t.people.length); }).length;
+    if (empty * 2 >= res.teams.length) return true;
+    if (res.header === false) return true;   // the column reader found no header row
+    var rows = 0; sheets.forEach(function (sh) { rows += filled(sh.rows).length; });
+    return rows > 4 && (res.ignored || 0) * 2 > rows;
+  }
+  function showMessy(on) { var m = document.getElementById('messymsg'); if (m) m.hidden = !on; alignProgram(); }
+  // Download format: an empty program in our format (Excel), with example rows and a sheet of instructions
+  document.getElementById('dlfmt').addEventListener('click', function () {
+    loadXLSX().then(function (X) {
+      var wb = X.utils.book_new();
+      var ws = X.utils.aoa_to_sheet([
+        ['Team name', 'Employee name', 'Type'],
+        ['Example team A', 'Dana Cohen', 'Manager'],
+        ['Example team A', 'Avi Levi', 'Open space'],
+        ['Example team A', 'Noa Mizrahi', 'Open space'],
+        ['Example team B', '', 'Open space'],
+        ['Example team B', '', 'Open space']
+      ]);
+      ws['!cols'] = [{ wch: 28 }, { wch: 28 }, { wch: 14 }];
+      X.utils.book_append_sheet(wb, ws, 'Program');
+      var how = X.utils.aoa_to_sheet([
+        ['How to fill the EdenStardust program'],
+        ['1. One sheet, one header row: Team name | Employee name | Type. Keep the header as it is.'],
+        ['2. One row per seat: write the team name on every row. EdenStardust counts the seats of each team for you.'],
+        ['3. Employee name is optional: leave it empty for a seat with no name yet (like Example team B).'],
+        ['4. Type (optional): Open space, Single, Manager or C-level.'],
+        ['5. No totals, notes, titles or merged cells. Hebrew or English.'],
+        ['6. Delete the example rows, then upload the file with Upload program.']
+      ]);
+      how['!cols'] = [{ wch: 100 }];
+      X.utils.book_append_sheet(wb, how, 'How to fill');
+      var out = X.write(wb, { bookType: 'xlsx', type: 'array' });
+      downloadFile('EdenStardust program format.xlsx', new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    }, function () { layNote('Could not make the format file.'); });
+  });
   function readProgram(fname, sheets) {
     if (!sheets.some(function (s) { return filled(s.rows).length; })) { showErr(fname + ' is empty.'); return Promise.resolve(null); }
     progNote('Reading ' + fname + '…');
@@ -2662,7 +2719,8 @@ function MAIN() {
         how = res && res.error === 'rate_limited' ? 'read without Claude (usage limit reached)' : 'read without Claude';
         res = columnRead(sheets);
       }
-      if (!res || !res.teams.length) { progNote(''); showErr('No teams found in ' + fname + '.'); return null; }
+      if (isMessy(res, sheets)) { progNote(''); showErr(''); showMessy(true); return null; }
+      showMessy(false);
       res.how = how; return res;
     });
   }
