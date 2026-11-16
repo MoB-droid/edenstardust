@@ -202,7 +202,10 @@ main > section.stack { display: grid; gap: 10px; }
 .tn { min-width: 180px; font-weight: 500; cursor: text; }
 .tn input { font: 500 14px var(--display); width: 100%; padding: 4px 8px; margin: -5px 0; border: 1px solid var(--accent); border-radius: 4px; background: var(--paper); color: var(--fg); }
 .fold { display: inline-flex; align-items: center; gap: 10px; flex: none; background: none; border: 0; padding: 2px 0; color: var(--fg); font: 600 15px var(--display); cursor: pointer; text-align: left; }
-.fold .car { width: 0; height: 0; border-left: 6px solid var(--muted); border-top: 5px solid transparent; border-bottom: 5px solid transparent; transition: transform .15s; }
+.fold .car { width: 0; height: 0; border-left: 11px solid var(--fg); border-top: 8px solid transparent; border-bottom: 8px solid transparent; transition: transform .15s; }
+.fold { padding: 6px 4px; }
+/* tapping the team name opens the team, like the arrow */
+.seats tr.gh td.tn { cursor: pointer; }
 .fold[aria-expanded="true"] .car { transform: rotate(90deg); }
 .seats tr.gh td.cnt { font-weight: 600; cursor: text; }
 .cnt input { font: 600 14px var(--mono); width: 5em; padding: 4px 6px; margin: -5px 0; border: 1px solid var(--accent); border-radius: 4px; background: var(--paper); color: var(--fg); }
@@ -434,7 +437,7 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
     <div class="totrow tabletitle"><h2>PROGRAM</h2></div>
     <p class="prognote" id="prognote" hidden></p>
     <div class="tablewrap"><table class="seats" id="srows">
-      <thead><tr><th class="num">#</th><th>Name</th><th class="num">Seat</th><th class="num">Type</th><th class="del"><span class="acts"><button type="button" id="addteam" class="undo tip" data-tip="add team" aria-label="Add team">+</button><span class="delwrap"><button type="button" id="delprog" class="delbtn tip" data-tip="delete the whole program" aria-label="Delete all">Delete all</button></span></span></th></tr></thead>
+      <thead><tr><th class="num" aria-label="Open"></th><th>Name</th><th class="num">Seat</th><th class="num">Type</th><th class="del"><span class="acts"><button type="button" id="addteam" class="undo tip" data-tip="add team" aria-label="Add team">+</button><span class="delwrap"><button type="button" id="delprog" class="delbtn tip" data-tip="delete the whole program" aria-label="Delete all">Delete all</button></span></span></th></tr></thead>
     </table></div>
   </section>
 </main>
@@ -3117,6 +3120,8 @@ function MAIN() {
       return;
     }
     var b = e.target.closest('.fold');
+    // the team name opens / closes the team like the arrow (double-click still edits it)
+    if (!b) { var tnc = e.target.closest('tr.gh td.tn'); if (tnc && !tnc.querySelector('input')) b = tnc.parentNode.querySelector('.fold'); }
     if (b) { var g = b.closest('tbody'); var open = b.getAttribute('aria-expanded') !== 'true'; setOpen(g, open); shade(g.dataset.t, open); return; }
     var r = e.target.closest('tr.m'); if (!r) return;
     shade(r.parentNode.dataset.t, false);
