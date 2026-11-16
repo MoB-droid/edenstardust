@@ -61,7 +61,9 @@ Only these artifacts belong on the user's Claude for this project. **Never creat
 `build.py` turns the sources into pages:
 - `src/index.html` → `index.html` (adds the HTML wrapper).
 - `src/seatplan.html` → `plan.html`: loads Supabase + `js/eden-shim.js` and makes a few exact text swaps (each must match, or the build stops: then update the swap).
-- `js/eden-shim.js` (hand-written, not an artifact) gives the editor the same `window.claude.use('db' | 'assets' | 'downloads')` API it has on claude.ai, backed by Supabase. `sample` (Claude reading Excel) returns null on the site, so the editor's built-in reader is used.
+- `js/eden-shim.js` (hand-written, not an artifact) gives the editor the same `window.claude.use('db' | 'assets' | 'downloads')` API it has on claude.ai, backed by Supabase. `sample` (Claude reading Excel) returns null on the site, so the editor's built-in reader is used. It also adds the black **My layouts** button (back to the dashboard, 44 px high like the logo) next to the logo on `plan.html`; change it only in this file (it cannot be previewed in the artifact).
+
+**Design (since 15 Nov 2026):** Stardust palette on every page: gold `#BEAC6E`, black, greys `#E5E5E5` / `#F7F7F7`, white; light mode only (no dark mode). Team colours, markers and all editor rules are in the Sitting arrangement artifact (artifact 3), including the HARD RULES (markers never overlap or touch the building).
 
 ## 5. Supabase
 
@@ -72,7 +74,7 @@ Only these artifacts belong on the user's Claude for this project. **Never creat
 | # | Table / bucket | Holds | Who can access (RLS) |
 |---|----------------|-------|----------------------|
 | 1 | `plans` | one row per seat plan: `owner`, `title`, `thumb` (storage path of the plan picture), `seats`, `updated_at` | owner only |
-| 2 | `plan_docs` | the editor's data, one row per doc: `plan_id`, `col`, `doc_id`, `data` (jsonb). Collections as in the spec: names, teams, need, moves, deleted, gone, added, assign, meta, layouts, plan (doc `current` = the layout), flags, pseat | owner of the plan |
+| 2 | `plan_docs` | the editor's data, one row per doc: `plan_id`, `col`, `doc_id`, `data` (jsonb). Collections as in the spec: names, teams, need, moves, deleted, gone, added, assign, meta (docs `title`, `sheet`, `dest`, `option` = last option number on a layout picture), layouts, plan (doc `current` = the layout), flags, pseat, ptype, pkind | owner of the plan |
 | 3 | storage bucket `plan-files` (private, 20 MB max) | uploaded floor plans and plan pictures, path `<user id>/<plan id>/<file>` | owner's folder only; shown through signed links |
 | 4 | `logins` | one row per sign-in (email, method, time) | insert own; read: master + shared viewers |
 | 5 | `entry_viewers` | emails the master shared the Entries list with | master manages; viewers read their own row |
