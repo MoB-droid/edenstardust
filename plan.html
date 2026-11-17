@@ -129,8 +129,9 @@ main > section.stack:last-child { border: 1px solid var(--line); border-radius: 
 .seats tbody.on .addbtn { color: var(--team-hi-ink); border-color: var(--team-hi-ink); }
 .delbtn { font: 500 13px var(--mono); color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
 .delbtn:hover { color: var(--clash); border-color: var(--clash); }
-.confirm { position: absolute; right: 100%; top: 50%; transform: translateY(-50%); margin-right: 8px; white-space: nowrap; z-index: 5;
-  font: 600 14px var(--mono); color: #ffffff; background: var(--clash); border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.22); }
+/* "Are you sure?" pops up right on top of the Delete button pressed (placed by placeConfirm), in the site font */
+.confirm { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; z-index: 5;
+  font: 600 14px var(--display); color: #ffffff; background: var(--clash); border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.22); }
 .seats tbody.on .delbtn { color: var(--team-hi-ink); border-color: var(--team-hi-ink); }
 tbody.grp.gone { display: none; }
 .seats tr.m.pgone { display: none; }
@@ -2134,6 +2135,13 @@ function MAIN() {
       try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {}
     }
   }
+  // centre the "Are you sure?" button on the Delete button that opened it
+  function placeConfirm(c, btn) {
+    var op = c.offsetParent; if (!op) return;
+    var b = btn.getBoundingClientRect(), o = op.getBoundingClientRect();
+    c.style.left = (b.left - o.left - op.clientLeft + b.width / 2) + 'px';
+    c.style.top = (b.top - o.top - op.clientTop + b.height / 2) + 'px';
+  }
   function closeConfirm() { document.querySelectorAll('.confirm').forEach(function (c) { c.remove(); }); }
   document.addEventListener('click', function (e) { if (!e.target.closest('.confirm, .delbtn')) closeConfirm(); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeConfirm(); });
@@ -2460,7 +2468,7 @@ function MAIN() {
       return new Promise(function (ok, bad) { c.toBlob(function (b) { if (b) ok(b); else bad(new Error('jpg')); }, 'image/jpeg', 0.92); });
     });
   }
-  function makeProgramXlsx() {
+  function programRows() {
     var rows = [['Team', 'Team name', 'Seats needed', '#', 'Name', 'Type', 'Seat']];
     document.querySelectorAll('#srows tbody.grp').forEach(function (g) {
       if (g.classList.contains('gone')) return;
@@ -2472,6 +2480,15 @@ function MAIN() {
         rows.push(['', '', '', +(r.dataset.no || 0), r.children[1].textContent.trim(), ty, /^[0-9]+$/.test(seat) ? +seat : seat]);
       });
     });
+    return rows;
+  }
+  // the program as CSV (opens in Excel; UTF-8 mark so Hebrew shows right): for share menus that refuse Excel files
+  function makeProgramCsv() {
+    var csv = programRows().map(function (r) { return r.map(function (v) { v = String(v == null ? '' : v); return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(','); }).join('\r\n');
+    return new Blob(['\ufeff' + csv], { type: 'text/csv' });
+  }
+  function makeProgramXlsx() {
+    var rows = programRows();
     return loadXLSX().then(function (X) {
       var ws = X.utils.aoa_to_sheet(rows), wb = X.utils.book_new();
       ws['!cols'] = [{ wch: 8 }, { wch: 24 }, { wch: 13 }, { wch: 5 }, { wch: 28 }, { wch: 6 }, { wch: 7 }];
@@ -2483,7 +2500,9 @@ function MAIN() {
   function deliverMany(list, kind) {
     var to = destOf(kind).to;
     if (to === 'app' && navigator.share && navigator.canShare) {
-      // files the share menu will not take (the program Excel on Chrome / Edge) are saved to Downloads first
+      // a file the share menu will not take (the program Excel on Chrome / Edge) is sent in its other form (CSV);
+      // anything still refused is saved to Downloads first
+      list = list.map(function (f) { return window.__shareable(f.name) || !f.alt ? f : f.alt; });
       var rest = list.filter(function (f) { return !window.__shareable(f.name); });
       list = list.filter(function (f) { return window.__shareable(f.name); });
       if (rest.length) {
@@ -2519,7 +2538,7 @@ function MAIN() {
     layNote('Making the layout picture and the program…', true);
     Promise.all([makeLayoutPicture(), makeProgramXlsx()]).then(function (r) {
       layNote('');
-      deliverMany([{ name: fileBase() + ' - layout.jpg', blob: r[0] }, { name: fileBase() + ' - program.xlsx', blob: r[1] }], 'program');
+      deliverMany([{ name: fileBase() + ' - layout.jpg', blob: r[0] }, { name: fileBase() + ' - program.xlsx', blob: r[1], alt: { name: fileBase() + ' - program.csv', blob: makeProgramCsv() } }], 'program');
     }, function () { layNote('Could not make the files.'); });
   });
   // ---- Layout title: double-click to rename (saved in db collection "meta", doc "title").
@@ -2596,7 +2615,7 @@ function MAIN() {
       ev.stopPropagation(); closeConfirm();
       batch(function () { teamIds.slice().forEach(function (t) { if (!store.deleted[t]) { shade(t, false); saveDeleted(t, true); } }); });
     });
-    wrap.appendChild(c); c.focus();
+    wrap.appendChild(c); placeConfirm(c, this); c.focus();
   });
   // ---- Upload a table (Excel or CSV): adds its teams and people to the program, then runs Suggest.
   var upfile = document.getElementById('upfile');
@@ -3262,7 +3281,7 @@ function MAIN() {
       c.type = 'button'; c.className = 'confirm'; c.textContent = 'Are you sure?';
       if (db1.dataset.s) { c.dataset.s = db1.dataset.s; c.setAttribute('aria-label', 'Yes, delete this person'); }
       else { c.dataset.t = db1.dataset.t; c.setAttribute('aria-label', 'Yes, delete team T' + db1.dataset.t); }
-      db1.parentNode.appendChild(c); c.focus();
+      db1.parentNode.appendChild(c); placeConfirm(c, db1); c.focus();
       return;
     }
     var b = e.target.closest('.fold');
