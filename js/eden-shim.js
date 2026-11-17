@@ -194,4 +194,78 @@
     st.textContent = '.eden-back{display:inline-flex;align-items:center;box-sizing:border-box;height:44px;font:600 15px "IBM Plex Mono",ui-monospace,monospace;color:#ffffff;background:#000000;border-radius:8px;padding:0 16px;text-decoration:none;white-space:nowrap}.eden-back:hover{background:#333333}.eden-back:focus-visible{outline:2px solid #BEAC6E;outline-offset:2px}';
     document.head.appendChild(st);
   });
+
+  // ---- Share a copy of this plan with another user (by email). The copy is theirs: never synced with this one.
+  // Database side (Supabase): share_plan → files copied to shared/<share id>/ → share_ready; the other user's
+  // My seat plans turns it into their own plan (claim_shares).
+  function sharePlan(email) {
+    var id;
+    return ready.then(function () { return sb.rpc('share_plan', { p_plan: planId, p_email: email }); }).then(function (r) {
+      if (r.error) throw r.error;
+      id = r.data;
+      // every file this plan points to (plan picture, uploaded floor plans, dashboard picture)
+      var text = JSON.stringify(cache) + ' ' + (planRow && planRow.thumb || '') + ' ' + JSON.stringify(rowFromCache());
+      var re = new RegExp(uid + '/' + planId + '/[^"\\\\\\s]+', 'g'), seen = {}, list = [];
+      (text.match(re) || []).forEach(function (pth) { if (!seen[pth]) { seen[pth] = 1; list.push(pth); } });
+      return list.reduce(function (pr, pth) {
+        return pr.then(function () { return sb.storage.from(BUCKET).copy(pth, 'shared/' + id + '/' + pth.split('/').pop()); });
+      }, Promise.resolve());
+    }).then(function () { return sb.rpc('share_ready', { p_share: id }); }).then(function (r) { if (r.error) throw r.error; });
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    var wrap = document.getElementById('wrap'), sec = wrap && wrap.parentNode;
+    if (!sec) return;
+    var st = document.createElement('style');
+    st.textContent = '.eden-share{position:absolute;z-index:8;width:44px;height:44px;display:grid;place-items:center;background:#FFFFFF;color:#000000;border:1px solid #BEAC6E;border-radius:8px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.08)}'
+      + '.eden-share:hover,.eden-share[aria-expanded="true"]{background:#F7F7F7}.eden-share:focus-visible{outline:2px solid #BEAC6E;outline-offset:2px}.eden-share svg{width:22px;height:22px}'
+      + '.eden-sharebox{position:absolute;z-index:9;width:min(340px,calc(100% - 24px));box-sizing:border-box;display:grid;gap:10px;padding:16px;background:#FFFFFF;border:1px solid #E5E5E5;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.18);font:400 15px "IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;color:#000000}'
+      + '.eden-sharebox h3{margin:0;font-weight:600;font-size:18px}.eden-sharebox p{margin:0;color:#6E6E6E;font-size:14px;line-height:1.35}'
+      + '.eden-sharebox input{font:inherit;font-size:16px;padding:9px 11px;border:1px solid #E5E5E5;border-radius:8px;background:#FFFFFF;color:#000000}.eden-sharebox input:focus{outline:2px solid #BEAC6E;outline-offset:1px}'
+      + '.eden-sharebox .row{display:flex;gap:8px;justify-content:flex-end}.eden-sharebox button{font:600 15px "IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;border-radius:8px;padding:8px 16px;cursor:pointer}'
+      + '.eden-sharebox .go{background:#000000;color:#FFFFFF;border:0}.eden-sharebox .go:hover{background:#333333}.eden-sharebox .go:disabled{opacity:.6;cursor:wait}'
+      + '.eden-sharebox .no{background:#FFFFFF;color:#000000;border:1px solid #BEAC6E}.eden-sharebox .msg{min-height:1.2em;color:#000000}.eden-sharebox .msg.err{color:#d92d20}';
+    document.head.appendChild(st);
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'eden-share'; btn.title = 'Share a copy of this plan'; btn.setAttribute('aria-label', 'Share a copy of this plan with another user');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>';
+    var box = document.createElement('form');
+    box.className = 'eden-sharebox'; box.hidden = true; box.noValidate = true;
+    box.innerHTML = '<h3>Share a copy</h3><p>They get their own copy in My seat plans. Changes are not synced.</p>'
+      + '<input type="email" autocomplete="email" placeholder="Their email" aria-label="Email of the person to share with" required>'
+      + '<p class="msg" role="status"></p><div class="row"><button type="button" class="no">Cancel</button><button type="submit" class="go">Share</button></div>';
+    sec.appendChild(btn); sec.appendChild(box);
+    var input = box.querySelector('input'), msg = box.querySelector('.msg'), go = box.querySelector('.go');
+    // top-right corner of the plan frame
+    function place() {
+      var top = wrap.offsetTop + 12, right = sec.clientWidth - (wrap.offsetLeft + wrap.offsetWidth) + 12;
+      btn.style.top = top + 'px'; btn.style.right = right + 'px';
+      box.style.top = (top + 52) + 'px'; box.style.right = right + 'px';
+    }
+    place(); addEventListener('resize', place);
+    if (window.ResizeObserver) new ResizeObserver(place).observe(wrap);
+    function say(t, err) { msg.textContent = t || ''; msg.classList.toggle('err', !!err); }
+    function open(on) {
+      box.hidden = !on; btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+      if (on) { say(''); go.disabled = false; input.value = ''; place(); input.focus(); }
+    }
+    btn.addEventListener('click', function () { open(box.hidden); });
+    box.querySelector('.no').addEventListener('click', function () { open(false); });
+    box.addEventListener('keydown', function (e) { if (e.key === 'Escape') { open(false); btn.focus(); } });
+    document.addEventListener('click', function (e) { if (!box.hidden && !box.contains(e.target) && !btn.contains(e.target)) open(false); });
+    box.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var email = input.value.trim();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { say('Enter a valid email address.', true); return; }
+      go.disabled = true; say('Sharing…');
+      sharePlan(email).then(function () {
+        go.disabled = false; input.value = '';
+        say('Shared with ' + email + '. It appears in their My seat plans next time they open it (after they sign up, if they have not yet).');
+      }, function (err) {
+        go.disabled = false;
+        var m = String(err && err.message || '');
+        say(/own email/.test(m) ? 'That is your own email.' : /bad email/.test(m) ? 'Enter a valid email address.' : 'Could not share: ' + (m || 'unknown error') + '. Try again.', true);
+      });
+    });
+  });
 })();
