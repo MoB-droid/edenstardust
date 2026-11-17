@@ -2348,6 +2348,10 @@ function MAIN() {
     if (window.__driveSave && window.__driveSave(name, blob, kind)) return Promise.resolve();
     return downloadFile(name, blob);
   }
+  // Chrome and Edge (computers and Android) share only pictures, video, sound, PDF and text files: never Excel.
+  // Their navigator.canShare() still says yes, and share() then fails, so those files are downloaded instead.
+  window.__shareable = function (name) { return !navigator.userAgentData || /\.(jpe?g|png|gif|webp|bmp|pdf|csv|txt)$/i.test(name); };
+  window.__downloadFile = function (name, blob) { return downloadFile(name, blob); };
   function downloadFile(name, blob) {
     var use = window.claude && window.claude.use ? window.claude.use('downloads') : Promise.resolve(null);
     return use.then(function (dl) {
@@ -2466,6 +2470,14 @@ function MAIN() {
   function deliverMany(list, kind) {
     var to = destOf(kind).to;
     if (to === 'app' && navigator.share && navigator.canShare) {
+      // files the share menu will not take (the program Excel on Chrome / Edge) are saved to Downloads first
+      var rest = list.filter(function (f) { return !window.__shareable(f.name); });
+      list = list.filter(function (f) { return window.__shareable(f.name); });
+      if (rest.length) {
+        rest.reduce(function (p, f) { return p.then(function () { return downloadFile(f.name, f.blob); }); }, Promise.resolve())
+          .then(function () { layNote('The program Excel was saved to Downloads: attach it in WhatsApp with the paperclip.', true); });
+        if (!list.length) return;
+      }
       var files; try { files = list.map(function (f) { return new File([f.blob], f.name, { type: f.blob.type || 'application/octet-stream' }); }); } catch (e) { files = null; }
       var data = files && { files: files, title: fileBase() };
       if (data && navigator.canShare(data)) {
@@ -3024,6 +3036,7 @@ function MAIN() {
     if (destOf(kind).to !== 'app') return false;
     var file; try { file = new File([blob], name, { type: blob.type || 'application/octet-stream' }); } catch (e) { return false; }
     var data = { files: [file], title: name };
+    if (!window.__shareable(name)) return false;
     if (!navigator.share || !navigator.canShare || !navigator.canShare(data)) { layNote('This device cannot send files to apps, so the file is downloaded instead.'); return false; }
     navigator.share(data).then(function () { layNote(''); }, function (e) {
       if (e && e.name === 'AbortError') return;
@@ -3037,7 +3050,15 @@ function MAIN() {
     var old = document.getElementById('tapshare'); if (old) old.remove();
     var b = document.createElement('button'); b.type = 'button'; b.id = 'tapshare'; b.className = 'undo big tapshare';
     b.textContent = 'Tap to share ' + data.title;
-    b.addEventListener('click', function () { b.remove(); navigator.share(data).catch(function () {}); });
+    b.addEventListener('click', function () {
+      b.remove();
+      navigator.share(data).catch(function (e) {
+        if (e && e.name === 'AbortError') return;
+        // the device still refuses: save the files instead and say so
+        data.files.reduce(function (p, f) { return p.then(function () { return window.__downloadFile(f.name, f); }); }, Promise.resolve())
+          .then(function () { layNote('The share menu would not open here, so the files were saved to Downloads.'); });
+      });
+    });
     document.body.appendChild(b); b.focus();
   }
   // Share: after a destination is chosen, send the file there (the same as pressing Reshare)
