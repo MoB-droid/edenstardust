@@ -579,15 +579,17 @@ function loadPdf() {
     window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js'; return window.pdfjsLib;
   });
 }
-// straight horizontal (H: [x0, y, x1]) and vertical (V: [y0, x, y1]) segments 20–110 pt long, in page points (top-left origin)
-function pdfSegments(lib, page, vp) {
+// straight horizontal (H: [x0, y, x1]) and vertical (V: [y0, x, y1]) segments lo–hi pt long (default 20–110), in page points (top-left origin)
+function pdfSegments(lib, page, vp, lo, hi) {
+  lo = lo || 20; hi = hi || 110;
   return page.getOperatorList().then(function (ol) {
-    var O = lib.OPS, U = lib.Util, fn = ol.fnArray, ar = ol.argsArray, ctm = [1, 0, 0, 1, 0, 0], st = [], H = [], V = [];
+    var O = lib.OPS, U = lib.Util, fn = ol.fnArray, ar = ol.argsArray, ctm = [1, 0, 0, 1, 0, 0], st = [], H = [], V = [], A = [];
     function add(M, x0, y0, x1, y1) {
       var ax = M[0] * x0 + M[2] * y0 + M[4], ay = M[1] * x0 + M[3] * y0 + M[5], bx = M[0] * x1 + M[2] * y1 + M[4], by = M[1] * x1 + M[3] * y1 + M[5];
-      var dx = Math.abs(bx - ax), dy = Math.abs(by - ay);
-      if (dy < 0.3 && dx > 20 && dx < 110) H.push([Math.min(ax, bx), (ay + by) / 2, Math.max(ax, bx)]);
-      else if (dx < 0.3 && dy > 20 && dy < 110) V.push([Math.min(ay, by), (ax + bx) / 2, Math.max(ay, by)]);
+      var dx = Math.abs(bx - ax), dy = Math.abs(by - ay), len = Math.sqrt(dx * dx + dy * dy);
+      if (len > lo && len < hi) A.push([ax, ay, bx, by]);   // every straight segment, at any angle
+      if (dy < 0.3 && dx > lo && dx < hi) H.push([Math.min(ax, bx), (ay + by) / 2, Math.max(ax, bx)]);
+      else if (dx < 0.3 && dy > lo && dy < hi) V.push([Math.min(ay, by), (ax + bx) / 2, Math.max(ay, by)]);
     }
     for (var i = 0; i < fn.length; i++) {
       var f = fn[i], a = ar[i];
@@ -609,12 +611,12 @@ function pdfSegments(lib, page, vp) {
         }
       }
     }
-    return { H: H, V: V };
+    return { H: H, V: V, A: A };
   });
 }
 // Desks = two parallel, equal, aligned edges a desk-size apart (desks 160×70, 140×70, 160×80 cm at 1:50;
 // square or rounded corners). Candidates that overlap each other are not desks (lounge seats, tables) and are dropped.
-function findDesks(S) {
+function findDesks(S, sizes) {
   var K = 72 / 2.54 / 50, R = [];
   function uniq(list) { var seen = {}, out = []; list.forEach(function (s) { var k = s.map(function (v) { return Math.round(v * 5); }).join(','); if (!seen[k]) { seen[k] = 1; out.push(s); } }); return out; }
   function index(list) { var m = {}; list.forEach(function (s) { var k = Math.round(s[0]) + '|' + Math.round(s[2]); (m[k] = m[k] || []).push(s); }); return m; }
@@ -630,7 +632,7 @@ function findDesks(S) {
       });
     });
   }
-  [[160, 70], [140, 70], [160, 80]].forEach(function (sz) {
+  (sizes || BASE_SIZES).forEach(function (sz) {
     var A = sz[0] * K, B = sz[1] * K;
     [[A, B], [B, A]].forEach(function (p) {
       scan(H, mH, p[0], p[1], function (a, b, pad) { return [a[0] - pad, a[1], a[2] + pad, b[1]]; });
@@ -680,6 +682,123 @@ function findDesks(S) {
   for (var i2 = 0; i2 < CD.length; i2++) for (var j2 = 0; j2 < i2; j2++) if (ov(CD[i2], CD[j2], 3)) cbad[i2] = cbad[j2] = true;
   return D.concat(CD.filter(function (_, i) { return !cbad[i]; })).map(function (r) { return r.map(function (v) { return Math.round(v * 10) / 10; }); });
 }
+// ---- Any drawing scale and desk size. findDesks works at 1:50 with known desk sizes (cm). A plan drawn at another
+// scale (1:100, or a model fitted to the page, e.g. 1:89) is read at that scale and then enlarged to 1:50.
+// The scale comes from rectangles whose sides match a desk size; desk sizes written on the plan ("130/60", "70X140") count most.
+var BASE_SIZES = [[160, 70], [140, 70], [160, 80]];
+var MORE_SIZES = [[130, 60], [120, 60], [140, 60], [150, 70], [150, 75], [180, 80], [180, 90], [120, 70], [140, 80], [120, 80], [200, 80], [200, 100]];
+function sizeLabels(page) {
+  return page.getTextContent().then(function (tc) {
+    var out = [], seen = {};
+    tc.items.forEach(function (it) {
+      var re = /(\d{2,3})\s*[\/xX×*]\s*(\d{2,3})/g, m;
+      while ((m = re.exec(it.str || ''))) {
+        var a = Math.max(+m[1], +m[2]), b = Math.min(+m[1], +m[2]);
+        if (a < 100 || a > 200 || b < 50 || b > 90 || a / b < 1.4 || a / b > 3.2 || seen[a + 'x' + b]) continue;
+        seen[a + 'x' + b] = 1; out.push([a, b]);
+      }
+    });
+    return out;
+  }, function () { return []; });
+}
+function sameSize(a, b) { return a[0] === b[0] && a[1] === b[1]; }
+function addSizes(list, more) { more.forEach(function (s) { if (!list.some(function (q) { return sameSize(q, s); })) list.push(s); }); return list; }
+// votes for 1:N scales: pairs of parallel, equal, aligned edges whose length and gap match a desk size at that scale
+function scaleVotes(S, labels) {
+  var sizes = addSizes(labels.slice(), BASE_SIZES.concat(MORE_SIZES)), votes = {};
+  function index(list) { var m = {}; list.forEach(function (s) { var k = Math.round(s[0]) + '|' + Math.round(s[2]); (m[k] = m[k] || []).push(s); }); return m; }
+  function near(m, p, q) { var r0 = Math.round(p), r2 = Math.round(q), out = []; for (var i = -1; i <= 1; i++) for (var j = -1; j <= 1; j++) out = out.concat(m[(r0 + i) + '|' + (r2 + j)] || []); return out; }
+  function run(list, perp) {
+    var m = index(list), pm = index(perp);
+    list.forEach(function (a) {
+      var L = a[2] - a[0];
+      near(m, a[0], a[2]).forEach(function (b) {
+        var g = b[1] - a[1];
+        if (g < 4 || Math.abs(a[0] - b[0]) > 0.6 || Math.abs(a[2] - b[2]) > 0.6) return;
+        // a closed shape: a side edge joins the two edges at one end (hatching and parallel lines have none)
+        if (!near(pm, a[1], b[1]).some(function (v) { return Math.abs(v[0] - a[1]) < 0.6 && Math.abs(v[2] - b[1]) < 0.6 && (Math.abs(v[1] - a[0]) < 0.6 || Math.abs(v[1] - a[2]) < 0.6); })) return;
+        sizes.forEach(function (sz) {
+          [[sz[0], sz[1]], [sz[1], sz[0]]].forEach(function (p) {
+            if (Math.abs(L / g - p[0] / p[1]) > 0.025 * p[0] / p[1]) return;
+            var n = 72 / 2.54 * p[0] / L; if (n < 20 || n > 250) return;
+            var key = Math.round(n), w = labels.some(function (q) { return sameSize(q, sz); }) ? 3 : 1;
+            var v = votes[key] = votes[key] || { n: 0, sizes: {} };
+            v.n += w; v.sizes[sz[0] + 'x' + sz[1]] = (v.sizes[sz[0] + 'x' + sz[1]] || 0) + 1;
+          });
+        });
+      });
+    });
+  }
+  S.forEach(function (fr) { run(fr.H, fr.V); run(fr.V, fr.H); });
+  // join neighbouring scales (89 and 90 are one scale)
+  var keys = Object.keys(votes).map(Number).sort(function (a, b) { return votes[b].n - votes[a].n; }), out = [];
+  keys.forEach(function (k) {
+    var c = out.filter(function (o) { return Math.abs(o.n - k) / o.n < 0.025; })[0];
+    if (!c) out.push(c = { n: k, votes: 0, sizes: {} });
+    c.votes += votes[k].n;
+    Object.keys(votes[k].sizes).forEach(function (z) { c.sizes[z] = (c.sizes[z] || 0) + votes[k].sizes[z]; });
+  });
+  return out.sort(function (a, b) { return b.votes - a.votes; });
+}
+// Wings of a building drawn at an angle (desks turned a few degrees): the main angles of the drawing's lines, -45°..45°, besides 0
+function tilts(A) {
+  var bins = {};
+  A.forEach(function (q) {
+    var dx = q[2] - q[0], dy = q[3] - q[1], L = Math.sqrt(dx * dx + dy * dy);
+    var a = Math.atan2(dy, dx) * 180 / Math.PI; a = ((a % 90) + 90) % 90; if (a > 45) a -= 90;
+    if (Math.abs(a) < 0.5 || Math.abs(a) > 44.5) return;
+    var k = Math.round(a * 5), b = bins[k] = bins[k] || { n: 0, w: 0, s: 0 }; b.n++; b.w += L; b.s += a * L;
+  });
+  var out = [];
+  Object.keys(bins).map(Number).sort(function (a, b) { return bins[b].n - bins[a].n; }).forEach(function (k) {
+    if (bins[k].n < 8 || out.some(function (o) { return Math.abs(o.k - k) <= 2; })) return;
+    var w = 0, sm = 0; for (var i = k - 1; i <= k + 1; i++) if (bins[i]) { w += bins[i].w; sm += bins[i].s; }
+    out.push({ k: k, a: sm / w });
+  });
+  return out.slice(0, 4).map(function (o) { return o.a; });
+}
+// the segments turned by -deg and enlarged f times, split into horizontal and vertical ones lo–hi pt long
+function frameSegs(A, deg, f, lo, hi) {
+  var t = -deg * Math.PI / 180, c = Math.cos(t) * f, sn = Math.sin(t) * f, H = [], V = [];
+  A.forEach(function (q) {
+    var ax = c * q[0] - sn * q[1], ay = sn * q[0] + c * q[1], bx = c * q[2] - sn * q[3], by = sn * q[2] + c * q[3];
+    var dx = Math.abs(bx - ax), dy = Math.abs(by - ay);
+    if (dy < 0.4 && dx > lo && dx < hi) H.push([Math.min(ax, bx), (ay + by) / 2, Math.max(ax, bx)]);
+    else if (dx < 0.4 && dy > lo && dy < hi) V.push([Math.min(ay, by), (ax + bx) / 2, Math.max(ay, by)]);
+  });
+  return { H: H, V: V };
+}
+// read the desks of a PDF page at any scale and angle: returns { D (desks in 1:50 points), f (page points × f = 1:50 points), n (1:n) }
+function readDesks(lib, page) {
+  var vp = page.getViewport({ scale: 1 });
+  return Promise.all([pdfSegments(lib, page, vp, 5, 400), sizeLabels(page)]).then(function (r) {
+    var A = r[0].A, labels = r[1], angles = [0].concat(tilts(A));
+    var cands = [{ n: 50, sizes: addSizes(BASE_SIZES.slice(), labels) }];
+    scaleVotes(angles.map(function (a) { return frameSegs(A, a, 1, 5, 400); }), labels).slice(0, 4).forEach(function (c) {
+      if (c.votes < 3 || Math.abs(c.n - 50) / 50 < 0.025) return;
+      var extra = Object.keys(c.sizes).filter(function (z) { return c.sizes[z] >= 3; }).map(function (z) { return z.split('x').map(Number); });
+      cands.push({ n: c.n, sizes: addSizes(addSizes(BASE_SIZES.slice(), labels), extra) });
+    });
+    function ov(a, b) { var w = Math.min(a[2], b[2]) - Math.max(a[0], b[0]), h = Math.min(a[3], b[3]) - Math.max(a[1], b[1]); return w > 3 && h > 3; }
+    var best = null;
+    cands.forEach(function (c) {
+      var f = c.n / 50, D = [];
+      angles.forEach(function (deg) {
+        var t = deg * Math.PI / 180, co = Math.cos(t), sn = Math.sin(t);
+        findDesks(frameSegs(A, deg, f, 20, 110), c.sizes).forEach(function (d) {
+          if (deg) {   // back to the page's angle: same size, centre turned back
+            var cx = (d[0] + d[2]) / 2, cy = (d[1] + d[3]) / 2, w = d[2] - d[0], h = d[3] - d[1], x = co * cx - sn * cy, y = sn * cx + co * cy;
+            d = [x - w / 2, y - h / 2, x + w / 2, y + h / 2].map(function (v) { return Math.round(v * 10) / 10; });
+          }
+          if (!D.some(function (q) { return ov(d, q); })) D.push(d);
+        });
+      });
+      // 1:50 (tried first) stays unless another scale finds clearly more desks
+      if (!best || D.length > Math.max(best.D.length * 1.25, best.D.length + 2)) best = { D: D, f: f, n: c.n, sizes: c.sizes, angles: angles };
+    });
+    return best;
+  });
+}
 // Teams = groups of desks less than 110 pt (about 2 m) apart. Numbered top to bottom, then left to right;
 // seats inside a team top to bottom, then left to right.
 function buildLayout(D, name) {
@@ -712,9 +831,9 @@ function buildLayout(D, name) {
   return { extent: E, margin: 250, desks: out, sides: sides, teams: G.length, heading: 'Layout · ' + base, desc: 'The ' + base + ' floor plan' };
 }
 // the plan picture: the building area, grayscale, light greys to white, a few grey levels (small PNG)
-function planPicture(page, E) {
+function planPicture(page, E, pf) {
   var W = E[2] - E[0], H = E[3] - E[1], S = Math.min(1.5, Math.sqrt(14e6 / (W * H)));
-  var vp = page.getViewport({ scale: S, offsetX: -E[0] * S, offsetY: -E[1] * S });
+  var vp = page.getViewport({ scale: S * (pf || 1), offsetX: -E[0] * S, offsetY: -E[1] * S });
   var c = document.createElement('canvas'); c.width = Math.round(W * S); c.height = Math.round(H * S);
   var ctx = c.getContext('2d'); ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, c.width, c.height);
   return page.render({ canvasContext: ctx, viewport: vp }).promise.then(function () {
@@ -728,10 +847,10 @@ function planPicture(page, E) {
 // Outside = everything reachable from the edge of the drawing without crossing a drawn line (walls, facade).
 // Core = the biggest connected block of thick grey walls (the concrete core).
 // Saved as a grid of 8 pt cells: L.shell = { x, y, cell, cols, rows, out } (out = run lengths, inside first), L.core = [x0, y0, x1, y1].
-function buildingShell(page, E) {
+function buildingShell(page, E, pf) {
   var R = [E[0] - 250, E[1] - 250, E[2] + 250, E[3] + 250], W = R[2] - R[0], H = R[3] - R[1];
   var s = Math.min(1, Math.sqrt(8e6 / (W * H)));
-  var vp = page.getViewport({ scale: s, offsetX: -R[0] * s, offsetY: -R[1] * s });
+  var vp = page.getViewport({ scale: s * (pf || 1), offsetX: -R[0] * s, offsetY: -R[1] * s });
   var cw = Math.round(W * s), ch = Math.round(H * s);
   var c = document.createElement('canvas'); c.width = cw; c.height = ch;
   var ctx = c.getContext('2d'); ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cw, ch);
@@ -835,7 +954,7 @@ function backfillShell(db) {
     return loadPdf().then(function (l) { lib = l; return fetch(url); }).then(function (r) { if (!r.ok) throw { code: 'fetch' }; return r.arrayBuffer(); })
       .then(function (buf) { return lib.getDocument({ data: new Uint8Array(buf) }).promise; })
       .then(function (pdf) { return pdf.getPage(1); })
-      .then(function (pg) { return buildingShell(pg, LAYOUT.extent); })
+      .then(function (pg) { return buildingShell(pg, LAYOUT.extent, LAYOUT.pscale); })
       .then(function (res) {
         LAYOUT.shell = res.shell; LAYOUT.core = res.core;
         if (window.__shellReady) window.__shellReady();
@@ -863,15 +982,16 @@ window.__autoLayout = function (file, db, recId) {
   loadPdf().then(function (l) { lib = l; return file.arrayBuffer(); })
     .then(function (buf) { return lib.getDocument({ data: new Uint8Array(buf) }).promise; })
     .then(function (pdf) { return pdf.getPage(1); })
-    .then(function (p) { page = p; return pdfSegments(lib, page, page.getViewport({ scale: 1 })); })
-    .then(function (S) {
-      var D = findDesks(S);
+    .then(function (p) { page = p; return readDesks(lib, page); })
+    .then(function (R) {
+      var D = R.D;
       if (D.length < 2) throw { code: 'nodesks' };
       L = buildLayout(D, file.name);
+      L.pscale = R.f; L.scale = R.n;
       lnote('Found ' + D.length + ' desks. Reading the building outline…', true);
-      return buildingShell(page, L.extent).then(function (res) { L.shell = res.shell; L.core = res.core; }, function () {}).then(function () {
+      return buildingShell(page, L.extent, L.pscale).then(function (res) { L.shell = res.shell; L.core = res.core; }, function () {}).then(function () {
         lnote('Found ' + D.length + ' desks. Drawing the plan…', true);
-        return planPicture(page, L.extent);
+        return planPicture(page, L.extent, L.pscale);
       });
     })
     .then(function (png) { return window.claude.use('assets').then(function (a) { if (!a) throw { code: 'not_granted' }; return a.upload(png, { type: 'image/png' }); }); })
