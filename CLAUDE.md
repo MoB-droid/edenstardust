@@ -61,7 +61,7 @@ Only these artifacts belong on the user's Claude for this project. **Never creat
 `build.py` turns the sources into pages:
 - `src/index.html` → `index.html` (adds the HTML wrapper).
 - `src/seatplan.html` → `plan.html`: loads Supabase + `js/eden-shim.js` and makes a few exact text swaps (each must match, or the build stops: then update the swap).
-- `js/eden-shim.js` (hand-written, not an artifact) gives the editor the same `window.claude.use('db' | 'assets' | 'downloads')` API it has on claude.ai, backed by Supabase. `sample` (Claude reading Excel) returns null on the site, so the editor's built-in reader is used. It also adds the black **My layouts** button (back to the dashboard, 44 px high like the logo) next to the logo on `plan.html`; change it only in this file (it cannot be previewed in the artifact).
+- `js/eden-shim.js` (hand-written, not an artifact) gives the editor the same `window.claude.use('db' | 'assets' | 'downloads')` API it has on claude.ai, backed by Supabase. `sample` (Claude reading Excel) returns null on the site, so the editor's built-in reader is used. It also adds the black **My layouts** button (back to the dashboard, 44 px high like the logo) next to the logo on `plan.html`, and the **share icon** in the top-right corner of the plan frame (box: email → Share; see section 5, Sharing a plan); change them only in this file (they cannot be previewed in the artifact).
 
 **Design (since 15 Nov 2026):** Stardust palette on every page: gold `#BEAC6E`, black, greys `#E5E5E5` / `#F7F7F7`, white; light mode only (no dark mode). Team colours, markers and all editor rules are in the Sitting arrangement artifact (artifact 3), including the HARD RULES (markers never overlap or touch the building).
 
@@ -78,7 +78,10 @@ Only these artifacts belong on the user's Claude for this project. **Never creat
 | 3 | storage bucket `plan-files` (private, 20 MB max) | uploaded floor plans and plan pictures, path `<user id>/<plan id>/<file>` | owner's folder only; shown through signed links |
 | 4 | `logins` | one row per sign-in (email, method, time) | insert own; read: master + shared viewers |
 | 5 | `entry_viewers` | emails the master shared the Entries list with | master manages; viewers read their own row |
+| 6 | `plan_shares` | one row per plan shared by email: `from_owner`, `plan_id`, `to_email` (lower case), snapshot `title` / `seats` / `thumb` / `docs` (all plan_docs as jsonb), `ready`, `claimed_at`, `new_plan` | sender reads own rows; written only through the functions below |
+| 7 | storage folder `plan-files/shared/<share id>/` | the files of a shared plan (copied by the sender) | write: the sender while not ready; read: sender + recipient (function `share_file_ok`) |
 
+- **Sharing a plan (17 Nov 2026):** a full, independent copy, never synced. Share icon on `plan.html` → email → `rpc share_plan(p_plan, p_email)` (owner only, not own email) snapshots the plan → the page copies every file the plan points to into `shared/<share id>/` → `rpc share_ready`. The recipient's My seat plans calls `rpc claim_shares()` first (confirmed email only): each ready share becomes their own `plans` row + `plan_docs`, file paths rewritten to `shared/<share id>/`; note "A seat plan was shared with you." Works for emails not signed up yet (claimed after sign-up). Deleting either plan never touches the other. All functions are SECURITY DEFINER, callable by `authenticated` only.
 - **Master account:** the email in `MASTER` in `src/index.html`. It sees the Entries list (people, first and last entry) and can share it from the share icon.
 - **Auth settings:** Site URL `https://edenstardust.com`; email sign-up with **Confirm email ON**. Never turn it off: the master check relies on confirmed emails.
 
