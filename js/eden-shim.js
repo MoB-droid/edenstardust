@@ -235,7 +235,7 @@
       + '<input type="email" autocomplete="email" placeholder="Their email" aria-label="Email of the person to share with" required>'
       + '<p class="msg" role="status"></p><div class="row"><button type="button" class="no">Cancel</button><button type="submit" class="go">Share</button></div>';
     sec.appendChild(btn); sec.appendChild(box);
-    var input = box.querySelector('input'), msg = box.querySelector('.msg'), go = box.querySelector('.go');
+    var input = box.querySelector('input'), msg = box.querySelector('.msg'), go = box.querySelector('.go'), no = box.querySelector('.no');
     // top-right corner of the plan frame
     function place() {
       var top = wrap.offsetTop + 12, right = sec.clientWidth - (wrap.offsetLeft + wrap.offsetWidth) + 12;
@@ -247,7 +247,7 @@
     function say(t, err) { msg.textContent = t || ''; msg.classList.toggle('err', !!err); }
     function open(on) {
       box.hidden = !on; btn.setAttribute('aria-expanded', on ? 'true' : 'false');
-      if (on) { say(''); go.disabled = false; input.value = ''; place(); input.focus(); }
+      if (on) { say(''); go.disabled = false; input.value = ''; no.textContent = 'Cancel'; place(); input.focus(); }
     }
     btn.addEventListener('click', function () { open(box.hidden); });
     box.querySelector('.no').addEventListener('click', function () { open(false); });
@@ -259,7 +259,7 @@
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { say('Enter a valid email address.', true); return; }
       go.disabled = true; say('Sharing…');
       sharePlan(email).then(function () {
-        go.disabled = false; input.value = '';
+        go.disabled = false; input.value = ''; no.textContent = 'Done';   // after a share the box closes with Done
         say('Shared with ' + email + '. It appears in their My seat plans next time they open it (after they sign up, if they have not yet).');
       }, function (err) {
         go.disabled = false;
