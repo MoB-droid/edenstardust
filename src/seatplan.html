@@ -40,6 +40,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .planwrap { overflow: auto; border: 1px solid var(--line); background: var(--plan); border-radius: 4px; max-height: 82vh; display: flex; }
 #plan { display: block; flex: none; width: 100%; height: auto; margin: auto; }
 #plan .bgimg { filter: var(--img-filter); opacity: var(--img-op); }
+/* a layout kept as uploaded: the drawing in its own colours, full strength */
+#plan .bgimg.asis { filter: none; opacity: 1; }
 /* thin black lines on the building shell and the core */
 #outlines path, #outlines rect { fill: none; stroke: #000000; stroke-width: 2; stroke-linejoin: miter; pointer-events: none; }
 .dk rect { fill: var(--tc, var(--desk)); fill-opacity: 1; stroke: var(--desk-edge); stroke-width: 1.4; }
@@ -479,7 +481,7 @@ function renderLayout(L) {
   plan.setAttribute('viewBox', VX + ' ' + VY + ' ' + VW + ' ' + VH);
   var IB = L.imgBox || E;
   var bg = '<rect x="' + VX + '" y="' + VY + '" width="' + VW + '" height="' + VH + '" fill="var(--plan)"/>';
-  if (L.img) bg += '<g class="bgimg"><image id="bgimage" href="' + xesc(L.img) + '" x="' + IB[0] + '" y="' + IB[1] + '" width="' + (IB[2] - IB[0]) + '" height="' + (IB[3] - IB[1]) + '"/></g>';
+  if (L.img) bg += '<g class="bgimg' + (L.asIs ? ' asis' : '') + '"><image id="bgimage" href="' + xesc(L.img) + '" x="' + IB[0] + '" y="' + IB[1] + '" width="' + (IB[2] - IB[0]) + '" height="' + (IB[3] - IB[1]) + '"/></g>';
   else bg += '<g class="emptyplan"><rect x="' + X0 + '" y="' + Y0 + '" width="' + (X1 - X0) + '" height="' + (Y1 - Y0) + '" rx="24"/><text x="' + (X0 + X1) / 2 + '" y="' + ((Y0 + Y1) / 2 - 40) + '">No layout yet</text><text class="sub" x="' + (X0 + X1) / 2 + '" y="' + ((Y0 + Y1) / 2 + 50) + '">Press Upload layout to add the floor plan</text></g>';
   document.getElementById('bgwrap').innerHTML = bg;
   var D = L.desks || [], teams = {}, order = [], dk = [];
@@ -773,6 +775,8 @@ function readDesks(lib, page) {
   var vp = page.getViewport({ scale: 1 });
   return Promise.all([pdfSegments(lib, page, vp, 5, 400), sizeLabels(page)]).then(function (r) {
     var A = r[0].A, labels = r[1], angles = [0].concat(tilts(A));
+    var box = [Infinity, Infinity, -Infinity, -Infinity];   // everything drawn on the page, in page points
+    A.forEach(function (q) { box[0] = Math.min(box[0], q[0], q[2]); box[1] = Math.min(box[1], q[1], q[3]); box[2] = Math.max(box[2], q[0], q[2]); box[3] = Math.max(box[3], q[1], q[3]); });
     var cands = [{ n: 50, sizes: addSizes(BASE_SIZES.slice(), labels) }];
     scaleVotes(angles.map(function (a) { return frameSegs(A, a, 1, 5, 400); }), labels).slice(0, 4).forEach(function (c) {
       if (c.votes < 3 || Math.abs(c.n - 50) / 50 < 0.025) return;
@@ -796,12 +800,13 @@ function readDesks(lib, page) {
       // 1:50 (tried first) stays unless another scale finds clearly more desks
       if (!best || D.length > Math.max(best.D.length * 1.25, best.D.length + 2)) best = { D: D, f: f, n: c.n, sizes: c.sizes, angles: angles };
     });
+    if (isFinite(box[0])) best.box = box.map(function (v) { return v * best.f; });
     return best;
   });
 }
 // Teams = groups of desks less than 110 pt (about 2 m) apart. Numbered top to bottom, then left to right;
 // seats inside a team top to bottom, then left to right.
-function buildLayout(D, name) {
+function buildLayout(D, name, box) {
   var par = D.map(function (_, i) { return i; });
   function f(i) { while (par[i] !== i) i = par[i] = par[par[i]]; return i; }
   for (var i = 0; i < D.length; i++) for (var j = 0; j < i; j++) {
@@ -817,7 +822,8 @@ function buildLayout(D, name) {
   G.sort(function (a, b) { return Math.round(a.y0 / 250) - Math.round(b.y0 / 250) || a.x0 - b.x0; });
   var E = [Infinity, Infinity, -Infinity, -Infinity];
   D.forEach(function (d) { E[0] = Math.min(E[0], d[0]); E[1] = Math.min(E[1], d[1]); E[2] = Math.max(E[2], d[2]); E[3] = Math.max(E[3], d[3]); });
-  E = [Math.floor(E[0] - 150), Math.floor(E[1] - 150), Math.ceil(E[2] + 150), Math.ceil(E[3] + 150)];
+  E = box ? [Math.floor(Math.min(E[0], box[0]) - 30), Math.floor(Math.min(E[1], box[1]) - 30), Math.ceil(Math.max(E[2], box[2]) + 30), Math.ceil(Math.max(E[3], box[3]) + 30)]
+    : [Math.floor(E[0] - 150), Math.floor(E[1] - 150), Math.ceil(E[2] + 150), Math.ceil(E[3] + 150)];
   var out = [], sides = {};
   G.forEach(function (g, ti) {
     var t = ti + 1;
@@ -831,12 +837,13 @@ function buildLayout(D, name) {
   return { extent: E, margin: 250, desks: out, sides: sides, teams: G.length, heading: 'Layout · ' + base, desc: 'The ' + base + ' floor plan' };
 }
 // the plan picture: the building area, grayscale, light greys to white, a few grey levels (small PNG)
-function planPicture(page, E, pf) {
+function planPicture(page, E, pf, asIs) {
   var W = E[2] - E[0], H = E[3] - E[1], S = Math.min(1.5, Math.sqrt(14e6 / (W * H)));
   var vp = page.getViewport({ scale: S * (pf || 1), offsetX: -E[0] * S, offsetY: -E[1] * S });
   var c = document.createElement('canvas'); c.width = Math.round(W * S); c.height = Math.round(H * S);
   var ctx = c.getContext('2d'); ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, c.width, c.height);
   return page.render({ canvasContext: ctx, viewport: vp }).promise.then(function () {
+    if (asIs) return new Promise(function (ok, bad) { c.toBlob(function (b) { if (b) ok(b); else bad({ code: 'png' }); }, 'image/png'); });
     var im = ctx.getImageData(0, 0, c.width, c.height), d = im.data;
     for (var i = 0; i < d.length; i += 4) { var v = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; v = v > 235 ? 255 : Math.round(v / 51) * 51; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
     ctx.putImageData(im, 0, 0);
@@ -944,7 +951,7 @@ function buildingShell(page, E, pf) {
 }
 // A layout saved before shells were read: read the shell from its uploaded PDF and save it (seating untouched).
 function backfillShell(db) {
-  if (!LAYOUT || LAYOUT.shell || !LAYOUT.desks || !LAYOUT.desks.length || !db) return;
+  if (!LAYOUT || LAYOUT.asIs || LAYOUT.shell || !LAYOUT.desks || !LAYOUT.desks.length || !db) return;
   db.collection('layouts').get().then(function (snap) {
     var recs = snap.docs.map(function (d) { return d.data(); }).filter(function (r) { return r && r.asset && /[.]pdf$/i.test(r.name || ''); })
       .sort(function (a, b) { return String(b.at || '').localeCompare(String(a.at || '')); });
@@ -986,13 +993,11 @@ window.__autoLayout = function (file, db, recId) {
     .then(function (R) {
       var D = R.D;
       if (D.length < 2) throw { code: 'nodesks' };
-      L = buildLayout(D, file.name);
-      L.pscale = R.f; L.scale = R.n;
-      lnote('Found ' + D.length + ' desks. Reading the building outline…', true);
-      return buildingShell(page, L.extent, L.pscale).then(function (res) { L.shell = res.shell; L.core = res.core; }, function () {}).then(function () {
-        lnote('Found ' + D.length + ' desks. Drawing the plan…', true);
-        return planPicture(page, L.extent, L.pscale);
-      });
+      // the uploaded drawing is kept as it is (whole page, its own colours, no outline or core drawn): only the desks are added
+      L = buildLayout(D, file.name, R.box);
+      L.pscale = R.f; L.scale = R.n; L.asIs = true;
+      lnote('Found ' + D.length + ' desks. Drawing the plan…', true);
+      return planPicture(page, L.extent, L.pscale, true);
     })
     .then(function (png) { return window.claude.use('assets').then(function (a) { if (!a) throw { code: 'not_granted' }; return a.upload(png, { type: 'image/png' }); }); })
     .then(function (up) {
