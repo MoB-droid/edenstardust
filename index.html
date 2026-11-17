@@ -574,7 +574,8 @@
     entriesBtn.hidden = false;
     shareBtn.hidden = r !== 'master';
     if (r !== 'master') closeShare();
-    if (entriesLoadedFor !== email) { entriesLoadedFor = email; entries.hidden = false; loadEntries(); }
+    // the Entries list stays closed after login (master and shared viewers); the Entries button opens it
+    if (entriesLoadedFor !== email) { entriesLoadedFor = email; loadEntries(); }
   }
 
   async function checkViewer(email) {
