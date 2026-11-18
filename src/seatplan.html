@@ -1,6 +1,6 @@
 <title>Seat Plan</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
 <style>
 /* Layout: zoomable plan with numbered desks and team markers outside the shell, then one foldable seats table. */
 :root {
@@ -47,7 +47,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .dk rect { fill: var(--tc, var(--desk)); fill-opacity: 1; stroke: var(--desk-edge); stroke-width: 1.4; }
 .dk text { fill: var(--tci, var(--ink)); font: 600 15px var(--mono); text-anchor: middle; dominant-baseline: central; }
 .dk { cursor: pointer; }
-.dk text.pn { font: 600 15px var(--display); }
+/* person names on desks: bigger and bold (set by the user 18 Nov 2026) */
+.dk text.pn { font: 700 20px var(--display); }
 .dk.hi rect { fill: var(--pill); fill-opacity: 1; stroke: var(--accent); stroke-width: 3; }
 .dk.hi text { fill: var(--pill-ink); }
 .team rect { fill: var(--tc, var(--pill)); }
@@ -1231,7 +1232,7 @@ function MAIN() {
       if (!nm) { pn.textContent = ''; dn.setAttribute('y', cy.toFixed(1)); return; }
       var max = vert ? h - 26 : w - 6;
       if (vert) { dn.setAttribute('y', (y + 12).toFixed(1)); pn.setAttribute('x', cx.toFixed(1)); pn.setAttribute('y', (cy + 11).toFixed(1)); pn.setAttribute('transform', 'rotate(-90 ' + cx.toFixed(1) + ' ' + (cy + 11).toFixed(1) + ')'); }
-      else { dn.setAttribute('y', (cy - 9).toFixed(1)); pn.setAttribute('x', cx.toFixed(1)); pn.setAttribute('y', (cy + 9).toFixed(1)); }
+      else { dn.setAttribute('y', (cy - 11).toFixed(1)); pn.setAttribute('x', cx.toFixed(1)); pn.setAttribute('y', (cy + 8).toFixed(1)); }
       pn.textContent = nm;
       try {
         var t = nm;
