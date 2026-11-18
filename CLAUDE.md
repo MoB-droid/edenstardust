@@ -94,7 +94,7 @@ Only these artifacts belong on the user's Claude for this project. **Never creat
 ## 7. Known gaps (backlog)
 
 1. Image floor plans (JPG/PNG) and PDFs where no desks are found cannot be processed on the website (on claude.ai, Claude did it). Needs a server-side step.
-2. Excel upload uses the built-in reader only (the user chose no paid AI key: no per-use cost). Tables it cannot understand get the messy-table message and the Download format button (our format: Team name | Employee name | Type).
+2. Excel upload uses the built-in readers only (the user chose no paid AI key: no per-use cost). Since 18 Nov 2026 an **HR seating file** (a rooms tab with first name + unit / team columns) is read by its own rules (`hrRead` in the editor; rules D4 in the Sitting arrangement artifact, script `kit/hr_import.py` there): team = the top group, first names only (never last names), future hires = empty seats, type from the space column, only the floor named in the plan title. Other tables it cannot understand get the messy-table message and the Download format button (our format: Team name | Employee name | Type).
 3. The user's older Seat Plan artifacts on claude.ai were not migrated to Supabase.
 4. Supabase free plan pauses after a week without activity; move to Pro when real users arrive.
 5. Link sheet → Update with the sheet "program1" (12 Nov 2026) made 8 teams with no names or seats. Not yet explained: read that sheet (with the user's OK) and check the column matching in the sheet reader. Since 16 Nov 2026 such a table shows the messy-table message ("Your table is messy…" + Download format) instead of adding empty teams.
