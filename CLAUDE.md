@@ -29,7 +29,7 @@ A seating planner. A company user signs in, sees their seat plans as picture til
 |---|-------|-------|-------|
 | 1 | Login + dashboard source | claude.ai artifact "EdenStardust" https://claude.ai/artifact/YZ99BHuSht2ngm1KEFZfg5 | copied to `src/index.html` |
 | 2 | Seat Plan editor source (master) | claude.ai artifact "Seat Plan" https://claude.ai/artifact/8YvWWtMB5YLdyWt5fFQMAp | copied to `src/seatplan.html`. A new layout gives numbered desks only (team 0, no markers, empty PROGRAM); teams come only from Upload program or + |
-| 3 | Seat Plan rules and spec | claude.ai artifact "Sitting arrangement" https://claude.ai/artifact/RaEdTRd7AEqCpkKp3uGVVD | rules, spec, work log, desk-finding kit (`kit/detect.py`, `kit/build.py`). Read before changing the editor; update its rules and work log when behaviour changes |
+| 3 | Seat Plan rules and spec | claude.ai artifact "Sitting arrangement" https://claude.ai/artifact/RaEdTRd7AEqCpkKp3uGVVD | rules, spec, work log, desk-finding kit (`kit/detect.py`, `kit/build.py`), HR file converter (`kit/hr_import.py`, rules D4). Read before changing the editor; update its rules and work log when behaviour changes |
 | 4 | Website files | this repo, branch `main`, GitHub Pages (root folder), custom domain edenstardust.com, HTTPS enforced | pushing `main` deploys |
 | 5 | Users, plan data, files | Supabase project `edenstardust`, ref `ldvzztgzamahlftnbawr`, region Frankfurt | free plan |
 | 6 | Domain + DNS | GoDaddy | A @ → 185.199.108–111.153; CNAME www → mob-droid.github.io; Resend records on `send.` and `resend._domainkey` |
