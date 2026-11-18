@@ -1436,6 +1436,15 @@ function MAIN() {
   // ---- Added teams: created with "+", listed at the bottom, marker parked under the plan until dragged in.
   var baseIds = teamIds.slice(), SVGNS = 'http://www.w3.org/2000/svg';
   var EXT = document.getElementById('plan').dataset.ext.split(' ').map(Number);
+  // A layout kept as uploaded (asIs) has the whole sheet as its extent: the Revit / CAD frame, title block and
+  // notes around the plan included. For team markers the building is the desks' area plus the facade walls
+  // (BLD_PAD) and every marker goes outside it (no interior markers), never out by the sheet frame.
+  var ASIS = !!(LAYOUT && LAYOUT.asIs), BLD_PAD = 150;
+  if (ASIS && LAYOUT.desks && LAYOUT.desks.length) {
+    var bx = [Infinity, Infinity, -Infinity, -Infinity];
+    LAYOUT.desks.forEach(function (d) { bx[0] = Math.min(bx[0], d[0]); bx[1] = Math.min(bx[1], d[1]); bx[2] = Math.max(bx[2], d[2]); bx[3] = Math.max(bx[3], d[3]); });
+    EXT = [Math.max(EXT[0], bx[0] - BLD_PAD), Math.max(EXT[1], bx[1] - BLD_PAD), Math.min(EXT[2], bx[2] + BLD_PAD), Math.min(EXT[3], bx[3] + BLD_PAD)];
+  }
   function addedIds() { return Object.keys(store.added).sort(function (a, b) { return store.added[a].order - store.added[b].order; }); }
   function esc(v) { return String(v).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function personRow(pid, i) {
@@ -1600,15 +1609,15 @@ function MAIN() {
       return;
     }
     // side = building edge nearest the team's centre
-    var dN = cy - EXT[1], dS = EXT[3] - cy, dW = cx - EXT[0], dE = EXT[2] - cx, m = Math.min(dN, dS, dW, dE);
-    if (m > 400) { tx = x0 - 200; ty = cy; L = [tx + 47, ty, x0, ty]; }
+    var dN = cy - EXT[1], dS = EXT[3] - cy, dW = cx - EXT[0], dE = EXT[2] - cx, m = Math.min(dN, dS, dW, dE), far = m > 400 && !ASIS;
+    if (far) { tx = x0 - 200; ty = cy; L = [tx + 47, ty, x0, ty]; }
     else if (m === dN) { tx = cx; ty = EXT[1] - 120; L = [tx, ty + 32, tx, y0]; }
     else if (m === dS) { tx = cx; ty = EXT[3] + 140; L = [tx, ty - 32, tx, y1]; }
     else if (m === dW) { tx = EXT[0] - 200; ty = cy; L = [tx + 60, ty, x0, ty]; }
     else { tx = EXT[2] + 200; ty = cy; L = [tx - 60, ty, x1, ty]; }
     g.setAttribute('transform', 'translate(' + (tx - b.x).toFixed(1) + ' ' + (ty - b.y).toFixed(1) + ')');
-    setLabels(g, m <= 400 && m === dN);
-    PLACED.push({ g: g, lead: lead, side: m > 400 ? 'I' : m === dN ? 'N' : m === dS ? 'S' : m === dW ? 'W' : 'E', x: tx, y: ty, b: b, L: L });
+    setLabels(g, !far && m === dN);
+    PLACED.push({ g: g, lead: lead, side: far ? 'I' : m === dN ? 'N' : m === dS ? 'S' : m === dW ? 'W' : 'E', x: tx, y: ty, b: b, L: L });
     if (lead) { ['x1', 'y1', 'x2', 'y2'].forEach(function (k, i) { lead.setAttribute(k, L[i].toFixed(1)); }); lead.style.display = ''; }
   }
   var PLACED = [];
