@@ -98,3 +98,4 @@ Only these artifacts belong on the user's Claude for this project. **Never creat
 3. The user's older Seat Plan artifacts on claude.ai were not migrated to Supabase.
 4. Supabase free plan pauses after a week without activity; move to Pro when real users arrive.
 5. Link sheet → Update with the sheet "program1" (12 Nov 2026) made 8 teams with no names or seats. Not yet explained: read that sheet (with the user's OK) and check the column matching in the sheet reader. Since 16 Nov 2026 such a table shows the messy-table message ("Your table is messy…" + Download format) instead of adding empty teams.
+6. **Email on the domain (planned, not set up):** the user chose Google Workspace (Gmail, Drive, Meet on @edenstardust.com) for sending, receiving and sharing files. Setup = Workspace sign-up + its MX / TXT records at GoDaddy; the Resend records on `send.` and `resend._domainkey` stay as they are.
