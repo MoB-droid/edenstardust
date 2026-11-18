@@ -2777,6 +2777,91 @@ function MAIN() {
     groups.forEach(function (g) { if (m.seats === undefined) g.seats = g.people.length + (g.blank || 0); if (!g.seats && !g.people.length) g.flag = 'no seat count'; g.types = g.ptypes.concat(g.stypes); g.typesPeople = g.ptypes.length; });
     return { teams: groups, ignored: ign, why: ign ? 'totals, notes or empty' : '', header: mc.header };
   }
+  // ---- HR seating files (rules D4, set by the user 18 Nov 2026): a tab of rooms with many columns (floor, unit,
+  // team, first / last name, role, manager, space needed, 0/1 room columns). Team = the TOP group: of the group
+  // columns, the one with the fewest distinct values (the header words differ between companies). First names only:
+  // last names are never kept. Future hires = a seat with no name. Type from the space column, else the 0/1 columns.
+  // One floor: when the plan title names a floor that is in the file, only that floor is read.
+  var HR = {
+    tab: /חדרים|rooms|seating|הושבה|עמדות/i,
+    group: /יחיד|צוות|מחלק|אגף|חטיב|קבוצ|unit|team|dep|division|group/i,
+    first: /שם פרטי|first ?name|given name/i,
+    last: /שם משפחה|last ?name|surname|family/i,
+    name: /^(שם|שם עובד|שם העובד|name|employee|employee name|full name)$/i,
+    floor: /קומה|floor|level/i,
+    space: /סוג חלל|חלל נדרש|סוג עמדה|seat ?type|space/i,
+    future: /גיוס|עתידי|\btbd\b|vacant|open position|future/i
+  };
+  function hrCell(v) { return String(v === undefined || v === null ? '' : v).replace(/\s+/g, ' ').trim(); }
+  function hrType(v) {
+    v = hrCell(v).toLowerCase();
+    if (!v || v.charAt(0) === '#' || v === '0') return '';
+    if (/מנהל|מנכ|בכיר|manager|c-?level|executive/.test(v)) return 'M';
+    if (/ר"צ|רצ|חדר|יחיד|בודד|single|office|room/.test(v)) return 'S';
+    if (/עמד|אופן|חלל פתוח|open|workstation|desk/.test(v)) return 'OS';
+    return '';
+  }
+  function hrHeader(rows) {
+    for (var i = 0; i < Math.min(rows.length, 30); i++) {
+      var h = (rows[i] || []).map(hrCell), f = -1, g = 0;
+      h.forEach(function (x, j) { if (f < 0 && HR.first.test(x)) f = j; });
+      if (f < 0) h.forEach(function (x, j) { if (f < 0 && HR.name.test(x)) f = j; });
+      h.forEach(function (x, j) { if (x && j !== f && HR.group.test(x) && !HR.first.test(x) && !HR.last.test(x)) g++; });
+      if (f >= 0 && g >= 1 && (HR.first.test(h[f]) || g >= 2)) return { i: i, h: h, first: f };
+    }
+    return null;
+  }
+  function hrRead(sheets) {
+    var order = sheets.filter(function (s) { return HR.tab.test(s.name); }).concat(sheets.filter(function (s) { return !HR.tab.test(s.name); }));
+    for (var si = 0; si < order.length; si++) {
+      var rows = order[si].rows || [], hd = hrHeader(rows); if (!hd) continue;
+      var h = hd.h, first = hd.first;
+      var at = function (r, j) { return j < 0 ? '' : hrCell(r[j]); };
+      var idx = function (re, skip) { for (var j = 0; j < h.length; j++) if (h[j] && re.test(h[j]) && skip.indexOf(j) < 0) return j; return -1; };
+      var last = idx(HR.last, [first]), floor = idx(HR.floor, [first, last]), space = idx(HR.space, [first, last, floor]);
+      var used = [first, last, floor, space], gcols = [];
+      h.forEach(function (x, j) { if (x && HR.group.test(x) && used.indexOf(j) < 0 && !HR.first.test(x) && !HR.last.test(x)) gcols.push(j); });
+      used = used.concat(gcols);
+      if (!gcols.length) continue;
+      var rest = filled(rows.slice(hd.i + 1));
+      // a row is a seat when it has a first or a last name (the last name is only checked, never kept)
+      var body = rest.filter(function (r) { var a = at(r, first); return (a || at(r, last)) && !SKIP.test(a) && !SKIP.test(at(r, space)); });
+      var ign = rest.length - body.length;
+      // one floor: a number in the plan title that is a floor in the file
+      var floors = {}, fl = '', other = 0;
+      if (floor >= 0) body.forEach(function (r) { var f = at(r, floor); if (f) floors[f] = 1; });
+      (fileBase().match(/\d+/g) || []).forEach(function (n) { if (!fl && floors[n]) fl = n; });
+      if (fl) { other = body.length; body = body.filter(function (r) { return at(r, floor) === fl; }); other -= body.length; }
+      // top group = the group column with the fewest distinct values (several sub-groups share one top group)
+      var cnt = {};
+      gcols.forEach(function (j) { var d = {}; body.forEach(function (r) { var v = at(r, j); if (v) d[v] = 1; }); cnt[j] = Object.keys(d).length; });
+      gcols = gcols.filter(function (j) { return cnt[j] > 0; }).sort(function (a, b) { return cnt[a] - cnt[b]; });
+      if (!gcols.length) continue;
+      // 0/1 room columns (e.g. "עמדת עבודה", "חדר ר"צ", "חדר מנהל בכיר"): the header word gives the type
+      var flags = [];
+      h.forEach(function (x, j) {
+        if (used.indexOf(j) >= 0 || !hrType(x)) return;
+        if (body.every(function (r) { var v = at(r, j); return v === '' || v === '0' || v === '1'; })) flags.push([j, hrType(x)]);
+      });
+      var groups = [], byKey = {};
+      body.forEach(function (r) {
+        var tn = ''; for (var k = 0; k < gcols.length && !tn; k++) tn = at(r, gcols[k]);
+        if (!tn) { ign++; return; }
+        var key = tn.toLowerCase();
+        if (!byKey[key]) { byKey[key] = { name: tn.slice(0, 80), people: [], ptypes: [], stypes: [], flag: '' }; groups.push(byKey[key]); }
+        var g = byKey[key], nm = at(r, first).split(' ')[0];
+        if (HR.future.test(at(r, first)) || HR.future.test(at(r, last))) nm = '';
+        var ty = space >= 0 ? hrType(at(r, space)) : '';
+        if (!ty) flags.some(function (f) { if (at(r, f[0]) === '1') { ty = f[1]; return true; } return false; });
+        if (nm) { g.people.push(nm); g.ptypes.push(ty); } else g.stypes.push(ty);
+      });
+      if (!groups.length) continue;
+      groups.forEach(function (g) { g.seats = g.people.length + g.stypes.length; g.types = g.ptypes.concat(g.stypes); g.typesPeople = g.ptypes.length; });
+      return { teams: groups, ignored: ign, why: ign ? 'totals, notes or empty' : '', header: true,
+        how: 'HR file: tab “' + order[si].name + '”, team = “' + h[gcols[0]] + '”' + (fl ? ', floor ' + fl + ' only (' + other + ' on other floors)' : '') + ', first names only' };
+    }
+    return null;
+  }
   function progNote(t) { var p = document.getElementById('prognote'); p.textContent = t || ''; p.hidden = !t; }
   function addProgram(res, fname, how) {
     var groups = res.teams, nPeople = 0, nSeats = 0, nFlag = 0;
@@ -2858,6 +2943,9 @@ function MAIN() {
   });
   function readProgram(fname, sheets) {
     if (!sheets.some(function (s) { return filled(s.rows).length; })) { showErr(fname + ' is empty.'); return Promise.resolve(null); }
+    // an HR seating file is read by its own rules (hrRead), never by Claude or the column reader
+    var hr = hrRead(sheets);
+    if (hr) { showErr(''); showMessy(false); return Promise.resolve(hr); }
     progNote('Reading ' + fname + ' with Claude…');
     return aiRead(fname, sheets).then(function (res) {
       var how = '';
