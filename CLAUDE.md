@@ -74,7 +74,7 @@ Only these artifacts belong on the user's Claude for this project. **Never creat
 | # | Table / bucket | Holds | Who can access (RLS) |
 |---|----------------|-------|----------------------|
 | 1 | `plans` | one row per seat plan: `owner`, `title`, `thumb` (storage path of the plan picture), `seats`, `updated_at` | owner only |
-| 2 | `plan_docs` | the editor's data, one row per doc: `plan_id`, `col`, `doc_id`, `data` (jsonb). Collections as in the spec: names, teams, need, moves, deleted, gone, added, assign, meta (docs `title`, `sheet`, `dest`, `option` = last option number on a layout picture), layouts, plan (doc `current` = the layout), flags, pseat, ptype, pkind | owner of the plan |
+| 2 | `plan_docs` | the editor's data, one row per doc: `plan_id`, `col`, `doc_id`, `data` (jsonb). Collections as in the spec: names, teams, need, moves, deleted, gone, added, assign, meta (docs `title`, `sheet`, `dest`, `option` = last option number on a layout picture), layouts, plan (doc `current` = the layout), flags, pseat, ptype, pkind. **Milestones** (19 Nov 2026): `meta` / `milestones` = {list: [{id, label}], active}; the first milestone (`m0`) uses the plain collections, every other one keeps its own program and seating collections as `<collection>@<milestone id>` (layout, meta and files are shared) | owner of the plan |
 | 3 | storage bucket `plan-files` (private, 20 MB max) | uploaded floor plans and plan pictures, path `<user id>/<plan id>/<file>` | owner's folder only; shown through signed links |
 | 4 | `logins` | one row per sign-in (email, method, time) | insert own; read: master + shared viewers |
 | 5 | `entry_viewers` | emails the master shared the Entries list with | master manages; viewers read their own row |
