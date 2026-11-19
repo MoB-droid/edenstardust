@@ -394,6 +394,10 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
 .tl-dot { position: relative; width: 24px; height: 24px; border-radius: 50%; border: 3px solid var(--accent); background: var(--paper); cursor: pointer; padding: 0; }
 .tl-dot[aria-pressed="true"] { background: var(--btn); border-color: var(--btn); box-shadow: 0 0 0 3px var(--paper), 0 0 0 5px var(--accent); }
 .tl-dot:focus-visible { outline: 2px solid var(--btn); outline-offset: 3px; }
+/* drag a milestone along the line to change its place */
+.tl-dot { touch-action: none; cursor: grab; }
+.tl-ms.drag { opacity: .65; }
+.tl-ms.drag .tl-dot { cursor: grabbing; transform: scale(1.15); }
 .tl-lab { font: 600 13px var(--display); color: var(--muted); white-space: nowrap; cursor: text; max-width: 150px; overflow: hidden; text-overflow: ellipsis; border: 0; background: none; padding: 0; }
 .tl-ms.on .tl-lab { color: var(--fg); }
 .tl-lab input { font: 600 13px var(--display); width: 130px; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 4px; background: var(--paper); color: var(--fg); }
@@ -707,6 +711,38 @@ function msEdit(m, lab) {
   inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') fin(true); else if (e.key === 'Escape') fin(false); e.stopPropagation(); });
   inp.addEventListener('blur', function () { fin(true); });
 }
+// drag a dot along the line: the others make room as it passes them; dropping saves the new order (no switch)
+function msDrag(w, e) {
+  if (e.button !== undefined && e.button !== 0) return;
+  var track = w.parentNode, x0 = e.clientX, moved = false;
+  function mv(ev) {
+    if (!moved && Math.abs(ev.clientX - x0) < 6) return;
+    if (!moved) { moved = true; w.classList.add('drag'); }
+    ev.preventDefault();
+    var others = Array.prototype.slice.call(track.querySelectorAll('.tl-ms')).filter(function (i) { return i !== w; });
+    var before = null;
+    others.some(function (i) { var r = i.getBoundingClientRect(); if (ev.clientX < r.left + r.width / 2) { before = i; return true; } return false; });
+    if (before) { if (w.nextSibling !== before) track.insertBefore(w, before); }
+    else if (track.lastChild !== w) track.appendChild(w);
+  }
+  function up() {
+    window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up);
+    w.classList.remove('drag');
+    if (!moved) return;
+    MS.dragged = Date.now();
+    var ids = Array.prototype.slice.call(track.querySelectorAll('.tl-ms')).map(function (i) { return i.dataset.id; });
+    var order = ids.map(function (id) { return MS.list.filter(function (x) { return x.id === id; })[0]; }).filter(Boolean);
+    if (order.length === MS.list.length && order.some(function (x, i) { return x !== MS.list[i]; })) { MS.list = order; msSave().catch(function () {}); }
+    msRender();
+  }
+  window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+}
+// keyboard: Shift + Left / Right moves the milestone one place
+function msNudge(m, k) {
+  var i = MS.list.indexOf(m), j = i + k; if (i < 0 || j < 0 || j >= MS.list.length) return;
+  MS.list.splice(i, 1); MS.list.splice(j, 0, m); msSave().catch(function () {}); msRender();
+  var d = document.querySelectorAll('.tl-dot')[j]; if (d) d.focus();
+}
 function msRender() {
   var el = document.getElementById('tline'); if (!el || !MS.db) return;
   el.hidden = false; el.innerHTML = '';
@@ -715,12 +751,14 @@ function msRender() {
   add.addEventListener('click', function () { msAdd(add); });
   var track = document.createElement('div'); track.className = 'tl-track';
   MS.list.forEach(function (m) {
-    var on = m.id === MS.active, w = document.createElement('div'); w.className = 'tl-ms' + (on ? ' on' : '');
+    var on = m.id === MS.active, w = document.createElement('div'); w.className = 'tl-ms' + (on ? ' on' : ''); w.dataset.id = m.id;
     var dot = document.createElement('button'); dot.type = 'button'; dot.className = 'tl-dot'; dot.setAttribute('aria-pressed', on ? 'true' : 'false');
     var txt = m.label || (m.id === 'm0' ? 'Start' : msToday());
-    dot.setAttribute('aria-label', (on ? 'Milestone shown: ' : 'Open milestone ') + txt); dot.title = on ? 'Shown now · tap to write its text' : 'Open ' + txt;
+    dot.setAttribute('aria-label', (on ? 'Milestone shown: ' : 'Open milestone ') + txt); dot.title = (on ? 'Shown now · tap to write its text' : 'Open ' + txt) + ' · drag to move it';
     var lab = document.createElement('span'); lab.className = 'tl-lab'; lab.textContent = txt; lab.title = 'Tap to write text';
-    dot.addEventListener('click', function () { if (on) msEdit(m, lab); else msGo(m.id); });
+    dot.addEventListener('click', function () { if (MS.dragged && Date.now() - MS.dragged < 400) return; if (on) msEdit(m, lab); else msGo(m.id); });
+    dot.addEventListener('pointerdown', function (e) { msDrag(w, e); });
+    dot.addEventListener('keydown', function (e) { if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); msNudge(m, e.key === 'ArrowLeft' ? -1 : 1); } });
     lab.addEventListener('click', function () { msEdit(m, lab); });
     w.appendChild(dot); w.appendChild(lab); track.appendChild(w);
   });
