@@ -989,6 +989,78 @@ function readDesks(lib, page) {
     return best;
   });
 }
+// ---- OSH = open space hidden (set by the user 19 Nov 2026): an open-space (connected) desk whose seat has nothing behind
+// it: no other desk / seat and no passage, because a wall runs close behind the chair. The chair side comes from the
+// bench: the chair is on the long side away from the desk it touches back to back (desks touching only end to end, or on
+// both long sides, have no known chair side and are not OSH). Behind the chair: no desk within 160 cm, and a straight line
+// of the drawing (a wall) parallel to the desk, 40-160 cm behind its edge, covering most of the desk's length.
+// desks: [[x0, y0, x1, y1, team]] in layout units (1:50 points); segs: [[ax, ay, bx, by]] in the same units. Returns seat numbers.
+function oshSeats(desks, segs) {
+  var U = 72 / 2.54 / 50, DMIN = 40 * U, DMAX = 160 * U, out = [];
+  function touchX(a, b) { return Math.min(a[2], b[2]) - Math.max(a[0], b[0]); }
+  function touchY(a, b) { return Math.min(a[3], b[3]) - Math.max(a[1], b[1]); }
+  desks.forEach(function (a, i) {
+    var w = a[2] - a[0], h = a[3] - a[1], horiz = w >= h, L = horiz ? w : h, lo = false, hi = false, conn = false;
+    desks.forEach(function (b, j) {
+      if (i === j) return;
+      var ox = touchX(a, b), oy = touchY(a, b);
+      if (ox > 3 && Math.abs(b[3] - a[1]) < 3) { conn = true; if (horiz && ox > 0.5 * w) lo = true; }        // b above a
+      if (ox > 3 && Math.abs(b[1] - a[3]) < 3) { conn = true; if (horiz && ox > 0.5 * w) hi = true; }        // b below a
+      if (oy > 3 && Math.abs(b[2] - a[0]) < 3) { conn = true; if (!horiz && oy > 0.5 * h) lo = true; }       // b left of a
+      if (oy > 3 && Math.abs(b[0] - a[2]) < 3) { conn = true; if (!horiz && oy > 0.5 * h) hi = true; }       // b right of a
+    });
+    if (!conn || lo === hi) return;
+    var dir = lo ? 1 : -1;   // the chair is on the side away from the touching desk: +1 = below / right, -1 = above / left
+    var edge = horiz ? (dir > 0 ? a[3] : a[1]) : (dir > 0 ? a[2] : a[0]);
+    var s0 = (horiz ? a[0] : a[1]) + 0.15 * L, s1 = (horiz ? a[2] : a[3]) - 0.15 * L, span = s1 - s0;
+    // nobody seated behind: no desk in the strip behind the chair
+    var blocked = desks.some(function (b, j) {
+      if (j === i) return false;
+      var b0 = horiz ? b[0] : b[1], b1 = horiz ? b[2] : b[3], n0 = horiz ? b[1] : b[0], n1 = horiz ? b[3] : b[2];
+      if (Math.min(b1, s1) - Math.max(b0, s0) <= 2) return false;
+      var near = dir > 0 ? n0 - edge : edge - n1;
+      return near > -1 && near < DMAX;
+    });
+    if (blocked) return;
+    var wall = segs.some(function (q) {
+      var ax = q[0], ay = q[1], bx = q[2], by = q[3], du = horiz ? Math.abs(bx - ax) : Math.abs(by - ay), dv = horiz ? Math.abs(by - ay) : Math.abs(bx - ax);
+      if (du < 1 || dv > 0.08 * du) return false;   // parallel to the desk
+      var v = horiz ? (ay + by) / 2 : (ax + bx) / 2, d = (v - edge) * dir;
+      if (d < DMIN || d > DMAX) return false;
+      var u0 = horiz ? Math.min(ax, bx) : Math.min(ay, by), u1 = horiz ? Math.max(ax, bx) : Math.max(ay, by);
+      return Math.min(u1, s1) - Math.max(u0, s0) >= 0.75 * span;
+    });
+    if (wall) out.push(i + 1);
+  });
+  return out;
+}
+// the drawing's straight lines, in layout units (the page read at scale f)
+function oshFromPage(lib, page, f, desks) {
+  var vp = page.getViewport({ scale: 1 });
+  return pdfSegments(lib, page, vp, 15, 100000).then(function (r) {
+    return oshSeats(desks, r.A.map(function (q) { return [q[0] * f, q[1] * f, q[2] * f, q[3] * f]; }));
+  });
+}
+// layouts read before OSH existed: read their OSH desks once from the stored PDF
+function backfillOsh(db) {
+  if (!LAYOUT || !LAYOUT.asIs || Array.isArray(LAYOUT.osh) || !LAYOUT.desks || !LAYOUT.desks.length || !db) return;
+  db.collection('layouts').get().then(function (snap) {
+    var recs = snap.docs.map(function (d) { return d.data(); }).filter(function (r) { return r && r.asset && /[.]pdf$/i.test(r.name || ''); })
+      .sort(function (a, b) { return String(b.at || '').localeCompare(String(a.at || '')); });
+    if (!recs.length) return;
+    var url = '/_blob/' + recs[0].asset; if (window.__blobUrl) url = window.__blobUrl(url);
+    var lib;
+    return loadPdf().then(function (l) { lib = l; return fetch(url); }).then(function (r) { if (!r.ok) throw { code: 'fetch' }; return r.arrayBuffer(); })
+      .then(function (buf) { return lib.getDocument({ data: new Uint8Array(buf) }).promise; })
+      .then(function (pdf) { return pdf.getPage(1); })
+      .then(function (pg) { return oshFromPage(lib, pg, LAYOUT.pscale || 1, LAYOUT.desks); })
+      .then(function (osh) {
+        LAYOUT.osh = osh;
+        if (window.__oshReady) window.__oshReady();
+        return db.doc('plan/current').update({ osh: osh });
+      });
+  }).catch(function () {});
+}
 // Teams = groups of desks less than 110 pt (about 2 m) apart. Numbered top to bottom, then left to right;
 // seats inside a team top to bottom, then left to right.
 function buildLayout(D, name, box) {
@@ -1186,7 +1258,8 @@ window.__autoLayout = function (file, db, recId) {
       L = buildLayout(D, file.name, R.box);
       L.pscale = R.f; L.scale = R.n; L.asIs = true;
       lnote('Found ' + D.length + ' desks. Drawing the plan…', true);
-      return planPicture(page, L.extent, L.pscale, true);
+      return oshFromPage(lib, page, R.f, L.desks).then(function (osh) { L.osh = osh; }, function () { L.osh = []; })
+        .then(function () { return planPicture(page, L.extent, L.pscale, true); });
     })
     .then(function (png) { return window.claude.use('assets').then(function (a) { if (!a) throw { code: 'not_granted' }; return a.upload(png, { type: 'image/png' }); }); })
     .then(function (up) {
@@ -1494,7 +1567,7 @@ function MAIN() {
       snap.docs.forEach(function (doc) { var b = doc.data(); if (b && b.on) n[doc.id] = true; });
       store.deleted = n; relayout();
     }, function () {});
-    setTimeout(function () { backfillShell(d); }, 1500);
+    setTimeout(function () { backfillShell(d); backfillOsh(d); }, 1500);
     d.collection('ptype').onSnapshot(function (snap) {
       var n = {};
       snap.docs.forEach(function (doc) { var b = doc.data(); if (b && b.t) n[doc.id] = String(b.t); });
@@ -1555,7 +1628,7 @@ function MAIN() {
     var r = c.closest('tr.m'), id = r.dataset.s, cur = store.ptype[id] || '', auto = c.classList.contains('auto') ? c.textContent : '';
     var sel = document.createElement('select');
     sel.id = 'ed-ptype-' + id; sel.setAttribute('aria-label', 'Desk type');
-    [['', 'Automatic' + (auto ? ' (' + auto + ')' : '')], ['OS', 'OS · open space'], ['S', 'S · single desk'], ['M', 'M · single desk'], ['C', 'C · single desk']].forEach(function (o) {
+    [['', 'Automatic' + (auto ? ' (' + auto + ')' : '')], ['OS', 'OS · open space'], ['OSH', 'OSH · open space hidden'], ['S', 'S · single desk'], ['M', 'M · single desk'], ['C', 'C · single desk']].forEach(function (o) {
       var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; if (o[0] === cur) op.selected = true; sel.appendChild(op);
     });
     c.textContent = ''; c.appendChild(sel); sel.focus();
@@ -1731,7 +1804,16 @@ function MAIN() {
     return out;
   }
   function isSingleDesk(d) { return !!d && !!BENCH[+d.dataset.bench] && BENCH[+d.dataset.bench].desks.length === 1; }
-  function rowSingle(id) { var ty = store.ptype[id]; if (ty) return ty !== 'OS'; return !!store.pkind[id]; }
+  function rowSingle(id) { var ty = store.ptype[id]; if (ty) return ty !== 'OS' && ty !== 'OSH'; return !!store.pkind[id]; }
+  // OSH: open-space desks with nothing behind the seat (found when the layout is read: LAYOUT.osh = seat numbers)
+  var oshKey = null, oshSet = {};
+  function isOshDesk(d) {
+    if (!d || isSingleDesk(d)) return false;
+    if (oshKey !== (LAYOUT && LAYOUT.osh)) { oshKey = LAYOUT && LAYOUT.osh; oshSet = {}; (oshKey || []).forEach(function (s) { oshSet[String(s)] = 1; }); }
+    return !!oshSet[d.dataset.s];
+  }
+  function rowHidden(id) { return store.ptype[id] === 'OSH'; }
+  window.__oshReady = function () { oshKey = null; relayout(); };
   // remember who sits at a single desk now (people with a program type keep it); returns undo entries
   function captureKinds(teams) {
     var stp = [];
@@ -2126,7 +2208,10 @@ function MAIN() {
           return (Math.pow(A.x - mv.x, 2) + Math.pow(A.y - mv.y, 2)) - (Math.pow(B.x - mv.x, 2) + Math.pow(B.y - mv.y, 2));
         });
         var nS = rows.filter(function (r, i) { return i < need && !store.pseat[r.dataset.s] && rowSingle(r.dataset.s); }).length;
-        mine = byDist.filter(isSingleDesk).slice(0, nS).concat(benchFill(mv, need - Math.min(nS, need)));
+        var nH = rows.filter(function (r, i) { return i < need && !store.pseat[r.dataset.s] && rowHidden(r.dataset.s); }).length;
+        mine = byDist.filter(isSingleDesk).slice(0, nS);
+        mine = mine.concat(byDist.filter(isOshDesk).slice(0, Math.min(nH, need - mine.length)));
+        mine = mine.concat(benchFill(mv, need).filter(function (d) { return mine.indexOf(d) < 0; }).slice(0, need - mine.length));
         if (mine.length < need) mine = mine.concat(byDist.filter(function (d) { return mine.indexOf(d) < 0; }).slice(0, need - mine.length));
         if (dragT === t) {
           // while dragging, the marker follows the pointer
@@ -2148,13 +2233,23 @@ function MAIN() {
         if (o && deskBy[o]) { r._desk = deskBy[o]; usedD[o] = 1; }
       });
       var pend = rows.filter(function (r, i) { return i < need && !r._desk; });
-      function takeDesk(r, single) {
-        for (var k = 0; k < mine.length; k++) {
+      // hid: true = only OSH desks, false = other desks first, then OSH ones; undefined = any
+      function takeDesk(r, single, hid) {
+        for (var pass = 0; pass < 2; pass++) for (var k = 0; k < mine.length; k++) {
           var d = mine[k]; if (usedD[d.dataset.s]) continue;
           if (single !== undefined && isSingleDesk(d) !== single) continue;
+          if (hid !== undefined && pass === 0 && isOshDesk(d) !== hid) continue;
+          if (hid === true && pass === 1) return;
           r._desk = d; usedD[d.dataset.s] = 1; return;
         }
       }
+      // OSH people (program type OSH) take the team's OSH desks before anyone else: their own place if it is one
+      rows.forEach(function (r, i) {
+        if (i >= need || r._desk || !rowHidden(r.dataset.s)) return;
+        var d = mine[i];
+        if (d && !usedD[d.dataset.s] && isOshDesk(d)) { r._desk = d; usedD[d.dataset.s] = 1; }
+      });
+      rows.forEach(function (r, i) { if (i < need && !r._desk && rowHidden(r.dataset.s)) takeDesk(r, false, true); });
       // first everyone keeps their own place in the team's desk order (when it is the right kind of desk)
       rows.forEach(function (r, i) {
         if (i >= need || r._desk) return;
@@ -2162,7 +2257,7 @@ function MAIN() {
         if (d && !usedD[d.dataset.s] && isSingleDesk(d) === rowSingle(r.dataset.s)) { r._desk = d; usedD[d.dataset.s] = 1; }
       });
       pend = pend.filter(function (r) { return !r._desk; });
-      pend.forEach(function (r) { takeDesk(r, rowSingle(r.dataset.s)); });
+      pend.forEach(function (r) { var sg = rowSingle(r.dataset.s); takeDesk(r, sg, sg ? undefined : false); });
       // no desk of the right kind: keep one's own place if it is free, else any desk left
       pend.forEach(function (r) {
         if (r._desk) return;
@@ -2186,7 +2281,7 @@ function MAIN() {
         var tyCell = r.querySelector('td.ty');
         if (tyCell && !tyCell.querySelector('input')) {
           var tyx = store.ptype[r.dataset.s];
-          tyCell.textContent = tyx || (d ? (isSingleDesk(d) ? 'S' : 'OS') : '');
+          tyCell.textContent = tyx || (d ? (isSingleDesk(d) ? 'S' : isOshDesk(d) ? 'OSH' : 'OS') : '');
           tyCell.classList.toggle('auto', !tyx);
         }
         if (d && !(d.dataset.s in deskName)) deskName[d.dataset.s] = store.names[r.dataset.s] || '';
@@ -2476,6 +2571,21 @@ function MAIN() {
       // connected desks first, as one compact group (rule 4)
       if (cap < nO) groupNear(got, nO - cap, h).forEach(function (b1) { taken[b1] = t; got.push(b1); cap += BENCH[b1].desks.length; });
       var osDesks = byBench(got, nO);
+      // OSH people: the team's open-space desks must include enough OSH desks; add the nearest free benches that have them
+      var hN = Math.min(nO, hNeed[t] || 0);
+      if (hN) {
+        var oshIn = function () { var c = 0; got.forEach(function (i) { if (!isOne(i)) BENCH[i].desks.forEach(function (d) { if (isOshDesk(d)) c++; }); }); return c; };
+        var hc0 = osDesks.length ? ctr(osDesks[0]) : h;
+        while (oshIn() < hN) {
+          var bi = -1, bd = Infinity;
+          BENCH.forEach(function (b, i) { if (i in taken || isOne(i) || !b.desks.some(isOshDesk)) return; var dd = dist(hc0, b); if (dd < bd) { bd = dd; bi = i; } });
+          if (bi < 0) break;
+          taken[bi] = t; got.push(bi);
+        }
+        var pool = []; got.forEach(function (i) { if (!isOne(i)) pool = pool.concat(BENCH[i].desks); });
+        var hs = pool.filter(isOshDesk).sort(function (a, b) { return dist(hc0, ctr(a)) - dist(hc0, ctr(b)); }).slice(0, hN);
+        osDesks = hs.concat(byBench(got.filter(function (i) { return !isOne(i); }), nO).filter(function (d) { return hs.indexOf(d) < 0; })).slice(0, nO);
+      }
       // then the single desks nearest the team's connected desks
       var hc = osDesks.length ? (function () { var c = osDesks.map(ctr); return { x: c.reduce(function (s, q) { return s + q.x; }, 0) / c.length, y: c.reduce(function (s, q) { return s + q.y; }, 0) / c.length }; })() : h;
       var ones = [];
@@ -2491,12 +2601,13 @@ function MAIN() {
       if (res[t].length < n) short.push(t);
     }
     var live = teamIds.filter(function (t) { return !store.deleted[t]; });
-    var kindSteps = captureKinds(live), sNeed = {};
+    var kindSteps = captureKinds(live), sNeed = {}, hNeed = {};
     live.forEach(function (t) {
       var n = needFor(t), k = 0;
       document.querySelectorAll('#srows tbody.grp[data-t="' + t + '"] tr.m').forEach(function (r) {
         if (k >= n || r.classList.contains('pgone')) return; k++;
         if (rowSingle(r.dataset.s)) sNeed[t] = (sNeed[t] || 0) + 1;
+        else if (rowHidden(r.dataset.s)) hNeed[t] = (hNeed[t] || 0) + 1;
       });
     });
     var moved = live.filter(function (t) { return store.moves[t]; }), rest = live.filter(function (t) { return !store.moves[t]; });
@@ -2678,7 +2789,7 @@ function MAIN() {
       g.querySelectorAll('tr.m').forEach(function (r) {
         if (r.classList.contains('unused') || r.classList.contains('pgone')) return;
         var seat = r.children[2].textContent.trim();
-        var ty = store.ptype[r.dataset.s] || (/^[0-9]+$/.test(seat) ? (isSingleDesk(deskBy[seat]) ? 'S' : 'OS') : '');
+        var ty = store.ptype[r.dataset.s] || (/^[0-9]+$/.test(seat) ? (isSingleDesk(deskBy[seat]) ? 'S' : isOshDesk(deskBy[seat]) ? 'OSH' : 'OS') : '');
         rows.push(['', '', '', +(r.dataset.no || 0), r.children[1].textContent.trim(), ty, /^[0-9]+$/.test(seat) ? +seat : seat]);
       });
     });
@@ -2894,6 +3005,7 @@ function MAIN() {
   // desk type: the initials or the words of our format (Open space, Single, Manager, C-level), also in Hebrew
   function normType(v) {
     v = String(v || '').trim().toLowerCase().replace(/[\s_.-]+/g, ' ');
+    if (/^(osh|os ?h|open ?space ?hidden|openspace ?hidden|hidden|אופן ?ספייס ?(נסתר|מוסתר|חבוי)|חלל פתוח ?(נסתר|מוסתר|חבוי)|נסתר|מוסתר)$/.test(v)) return 'OSH';
     if (/^(os|open ?space|openspace|אופן ?ספייס|חלל פתוח)$/.test(v)) return 'OS';
     if (/^(s|single|single desk|יחיד|בודד)$/.test(v)) return 'S';
     if (/^(m|manager|מנהל|מנהלת)$/.test(v)) return 'M';
@@ -2946,7 +3058,7 @@ function MAIN() {
       '6. If several sheets hold the same data, use the most detailed one, once.',
       '7. flag: null, or a short English note (max 8 words) when something is unsure, e.g. "no seat count", "seats guessed from people", "possible duplicate of X", "mixed totals". Use seats 0 when there is no number and no people.',
       '8. Never invent teams, people or numbers.',
-      '9. If there is a type column (OS = open-space desk; S, M or C = single desk), also return "people_types": one of "OS", "S", "M", "C" or null for each person (same order as people), and "seat_types": {"OS": n, "S": n, "M": n, "C": n} for seats not tied to a listed person. Leave both out when there is no type column.',
+      '9. If there is a type column (OS = open-space desk; OSH = open-space desk with nothing behind the seat; S, M or C = single desk), also return "people_types": one of "OS", "OSH", "S", "M", "C" or null for each person (same order as people), and "seat_types": {"OS": n, "OSH": n, "S": n, "M": n, "C": n} for seats not tied to a listed person. Leave both out when there is no type column.',
       '', 'File: ' + name, '', text
     ].join('\n');
   }
@@ -2961,7 +3073,7 @@ function MAIN() {
           var seats = Math.max(0, Math.min(2000, Math.round(+(t && t.seats) || 0)));
           var pt = Array.isArray(t && t.people_types) ? t.people_types.map(normType) : [], st = [];
           var sc = t && t.seat_types && typeof t.seat_types === 'object' ? t.seat_types : {};
-          ['OS', 'S', 'M', 'C'].forEach(function (k) { for (var q = 0; q < Math.min(2000, Math.round(+sc[k] || 0)); q++) st.push(k); });
+          ['OS', 'OSH', 'S', 'M', 'C'].forEach(function (k) { for (var q = 0; q < Math.min(2000, Math.round(+sc[k] || 0)); q++) st.push(k); });
           while (pt.length < people.length) pt.push('');
           return { name: String((t && t.name) || '').trim().slice(0, 80), seats: seats, people: people, flag: t && t.flag ? String(t.flag).slice(0, 80) : '', types: pt.slice(0, people.length).concat(st), typesPeople: people.length };
         }).filter(function (t) { return t.name; });
@@ -3146,7 +3258,7 @@ function MAIN() {
         ['1. One sheet, one header row: Team name | Employee name | Type. Keep the header as it is.'],
         ['2. One row per seat: write the team name on every row. EdenStardust counts the seats of each team for you.'],
         ['3. Employee name is optional: leave it empty for a seat with no name yet (like Example team B).'],
-        ['4. Type (optional): Open space, Single, Manager or C-level.'],
+        ['4. Type (optional): Open space, Open space hidden (an open-space desk with a wall behind the seat), Single, Manager or C-level.'],
         ['5. No totals, notes, titles or merged cells. Hebrew or English.'],
         ['6. Delete the example rows, then upload the file with Upload program.']
       ]);
