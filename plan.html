@@ -605,11 +605,51 @@ function watchPlan() {
 var MS_COLS = { names: 1, teams: 1, need: 1, moves: 1, assign: 1, deleted: 1, gone: 1, added: 1, flags: 1, pseat: 1, ptype: 1, pkind: 1 };
 var MS = { list: [{ id: 'm0', label: '' }], active: 'm0', db: null };
 function msCol(c, id) { id = id || MS.active; return MS_COLS[c] && id !== 'm0' ? c + '@' + id : c; }
+// the editor's db, routed to the milestone shown. Live listeners are kept so a switch re-points them in place (no reload:
+// the floor plan stays, only the teams and seating change); the first snapshots after a switch are applied together.
 function msDb(d) {
   if (!d || d.__raw) return d;
-  return { __raw: d,
-    collection: function (c) { return d.collection(msCol(c)); },
-    doc: function (p) { var s = String(p).split('/'); return d.doc(msCol(s[0]) + '/' + s.slice(1).join('/')); } };
+  var subs = [], initPending = 0;
+  var w = { __raw: d,
+    collection: function (c) {
+      if (!MS_COLS[c]) return d.collection(c);
+      return { doc: function (id) { return d.collection(msCol(c)).doc(id); },
+        get: function () { return d.collection(msCol(c)).get(); },
+        onSnapshot: function (fn, err) {
+          var sub = { c: c, fn: fn, err: err }; initPending++;
+          // when every listener has had its first data, the plan is loaded: seat teams that were never seated
+          sub.off = d.collection(msCol(c)).onSnapshot(function (snap) {
+            fn(snap);
+            if (!sub.seen) { sub.seen = true; if (--initPending === 0) setTimeout(msLoaded, 0); }
+          }, err);
+          subs.push(sub);
+          return function () { if (typeof sub.off === 'function') sub.off(); subs = subs.filter(function (x) { return x !== sub; }); };
+        } };
+    },
+    doc: function (p) { var s = String(p).split('/'); return d.doc(msCol(s[0]) + '/' + s.slice(1).join('/')); },
+    resub: function (done) {
+      var pending = subs.length, buf = [];
+      if (!pending) { if (done) done(); return; }
+      subs.forEach(function (sub) {
+        try { if (typeof sub.off === 'function') sub.off(); } catch (e) {}
+        var first = true;
+        sub.off = d.collection(msCol(sub.c)).onSnapshot(function (snap) {
+          if (!first) return sub.fn(snap);
+          first = false; buf.push([sub.fn, snap]);
+          if (--pending === 0) { buf.forEach(function (b) { try { b[0](b[1]); } catch (e) {} }); if (done) done(); setTimeout(msLoaded, 0); }
+        }, sub.err);
+      });
+    } };
+  MS.wrapped = w;
+  return w;
+}
+function msLoaded() { if (window.__autoSuggest) window.__autoSuggest(); }
+// open another milestone in place: undo history and listeners follow, the background plan is not redrawn
+function msShow(id) {
+  MS.active = id;
+  if (window.__msSwitched) window.__msSwitched();
+  msRender();
+  if (MS.wrapped) MS.wrapped.resub(function () { lnote(''); }); else location.reload();
 }
 function msLoad() {
   if (!(window.claude && window.claude.use)) return Promise.resolve();
@@ -629,8 +669,8 @@ function msToday() { try { return new Date().toLocaleDateString('en-GB', { day: 
 function msSave() { return MS.db.doc('meta/milestones').set({ list: MS.list, active: MS.active }); }
 function msGo(id) {
   if (id === MS.active) return;
-  MS.active = id; lnote('Opening the milestone…', true);
-  msSave().then(function () { setTimeout(function () { location.reload(); }, 250); }, function () { lnote('Could not open the milestone. Try again.'); });
+  msShow(id);
+  msSave().catch(function () {});
 }
 // + : copy every program and seating collection of the last milestone into a new one, then open it
 function msAdd(btn) {
@@ -649,9 +689,10 @@ function msAdd(btn) {
     })(jobs.slice(i, i + 20));
     return q;
   }).then(function () {
-    MS.list.push({ id: id, label: msToday() }); MS.active = id;
+    MS.list.push({ id: id, label: msToday() });
+    msShow(id);
     return msSave();
-  }).then(function () { location.reload(); }, function () { btn.disabled = false; lnote('Could not make the milestone. Try again.'); });
+  }).then(function () { btn.disabled = false; }, function () { btn.disabled = false; lnote('Could not make the milestone. Try again.'); });
 }
 function msEdit(m, lab) {
   if (lab.querySelector('input')) return;
@@ -1316,6 +1357,12 @@ function MAIN() {
   // Undo: every change pushes one step (a list of [collection, id, previous value]).
   var hist = [], undoing = false, HK = LS + ':undo' + (MS.active === 'm0' ? '' : ':' + MS.active);
   try { hist = JSON.parse(localStorage.getItem(HK) || '[]') || []; } catch (e) { hist = []; }
+  // another milestone opened in place: its own Undo history
+  window.__msSwitched = function () {
+    HK = LS + ':undo' + (MS.active === 'm0' ? '' : ':' + MS.active);
+    try { hist = JSON.parse(localStorage.getItem(HK) || '[]') || []; } catch (e) { hist = []; }
+    var u = document.getElementById('undo'); if (u) u.disabled = !hist.length;
+  };
   function keepHist() { try { localStorage.setItem(HK, JSON.stringify(hist)); } catch (e) {} var u = document.getElementById('undo'); if (u) u.disabled = !hist.length; }
   // batch(): run several changes as one Undo step
   function batch(fn) {
@@ -2310,6 +2357,13 @@ function MAIN() {
   // Rule 2 (no mixing): a bench belongs to one team only; a team's leftover desks on its bench stay empty.
   // Rule 4 (keep the team together): a team is placed as one compact group of benches, not scattered (see groupNear).
   // Rule 5 (fill the bench): a team fills each bench before starting another; nobody sits alone on a new bench (byBench).
+  // automatic Suggest (set by the user 19 Nov 2026): when a plan or a milestone opens, teams that were never seated
+  // (no Suggest result, never dragged) are seated at once; plans already seated are left exactly as they are
+  window.__autoSuggest = function () {
+    if (!allDesks.length) return;
+    var todo = addedIds().some(function (t) { return !store.deleted[t] && !store.assign[t] && !store.moves[t] && +(store.need[t] || 0) > 0; });
+    if (todo) suggest();
+  };
   function suggest() {
     var taken = {}, res = {}, short = [];
     function dist(a, b) { return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2)); }
