@@ -1886,22 +1886,25 @@ function MAIN() {
     allDesks.forEach(function (d) { d.classList.remove('ov', 'empty', 'mv', 'free'); });
     document.querySelectorAll('tr.m.unused, tr.m.pgone').forEach(function (r) { r.classList.remove('unused', 'pgone'); });
     // Team numbers shown on screen skip deleted teams (T1, T2, … with no gaps).
-    var shownNo = 0, shortList = [], noOf = {}, teamSum = [];
+    var shownNo = 0, shortList = [], noOf = {}, teamSum = [], pillLab = {};
+    // the pill shows the team name (T-number only while the team has no name) and its head count, sized to fit
+    // (head count added 19 Nov 2026, set by the user: the number only, no title)
+    function setPill(t, n) {
+      var mk = document.querySelector('#teams .team[data-t="' + t + '"] text:not(.tname):not(.short)'); if (!mk) return;
+      var nmT = (cap(store.teams[t] || '').trim() || pillLab[t] || '') + '\u2002' + n;
+      if (mk.textContent === nmT) return;
+      mk.textContent = nmT;
+      if (/[\u0590-\u05FF\u0600-\u06FF]/.test(nmT)) mk.setAttribute('direction', 'rtl'); else mk.removeAttribute('direction');
+      var pr = mk.parentNode.querySelector('rect');
+      if (pr) { try { var pw = Math.max(110, mk.getComputedTextLength() + 48), pcx = +pr.getAttribute('x') + +pr.getAttribute('width') / 2; pr.setAttribute('x', (pcx - pw / 2).toFixed(1)); pr.setAttribute('width', pw.toFixed(1)); } catch (e) {} }
+    }
     teamIds.forEach(function (t) {
       if (store.deleted[t]) return;
       shownNo++; noOf[t] = shownNo;
       var lab = 'T' + shownNo;
       paintColor(document.querySelector('#teams .team[data-t="' + t + '"]'), teamColor(shownNo));
       paintColor(document.querySelector('tbody.grp[data-t="' + t + '"]'), teamColor(shownNo));
-      var mk = document.querySelector('#teams .team[data-t="' + t + '"] text:not(.tname):not(.short)');
-      // the pill shows the team name (T-number only while the team has no name), sized to fit it
-      var nmT = cap(store.teams[t] || '').trim() || lab;
-      if (mk && mk.textContent !== nmT) {
-        mk.textContent = nmT;
-        if (/[֐-׿؀-ۿ]/.test(nmT)) mk.setAttribute('direction', 'rtl'); else mk.removeAttribute('direction');
-        var pr = mk.parentNode.querySelector('rect');
-        if (pr) { try { var pw = Math.max(110, mk.getComputedTextLength() + 48), pcx = +pr.getAttribute('x') + +pr.getAttribute('width') / 2; pr.setAttribute('x', (pcx - pw / 2).toFixed(1)); pr.setAttribute('width', pw.toFixed(1)); } catch (e) {} }
-      }
+      pillLab[t] = lab;
       var fb = document.querySelector('tbody.grp[data-t="' + t + '"] .fold');
       if (fb) { fb.dataset.lab = lab; fb.setAttribute('aria-label', 'Open or close team ' + lab); if (fb.lastChild.nodeType === 3 && fb.lastChild.nodeValue !== '') fb.lastChild.nodeValue = ''; }
     });
@@ -1912,6 +1915,7 @@ function MAIN() {
       var cnt = document.querySelector('.cnt[data-k="need"][data-id="' + t + '"]');
       if (cnt && !store.added[t]) { cnt.dataset.def = own.length; if (!store.need[t] && !cnt.querySelector('input')) cnt.textContent = own.length; }
       var need = needOf(t, own), mv = moveOf(t);
+      if (!store.deleted[t]) setPill(t, need);
       var g = document.querySelector('#teams .team[data-t="' + t + '"]'), lead = document.querySelector('#teams .lead[data-t="' + t + '"]');
       var short = document.querySelector('#teams .team[data-t="' + t + '"] .short');
       var rows = Array.prototype.slice.call(document.querySelectorAll('#srows tr.m[data-s]')).filter(function (r) { return r.parentNode.dataset.t === t; });
