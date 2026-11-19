@@ -382,6 +382,22 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
 /* unused desk (no team holds it): white, desk outline only */
 .dk.free:not(.hi):not(.th):not(.ts):not(.drop) rect { fill: var(--plan); fill-opacity: 1; stroke: var(--desk-edge); stroke-width: 1.4; }
 .dk.free:not(.hi):not(.th):not(.ts) text { fill: var(--muted); }
+/* milestones timeline (set by the user 19 Nov 2026): a line with a dot per milestone, + adds one; top of the right frame */
+.tline { display: flex; align-items: flex-start; gap: 12px; margin-top: 6px; }
+.tline[hidden] { display: none; }
+.tl-add { flex: none; width: 32px; height: 32px; margin-top: 1px; border-radius: 50%; border: 0; background: var(--btn); color: var(--btn-ink); font: 600 20px/1 var(--mono); cursor: pointer; display: grid; place-items: center; padding: 0; }
+.tl-add:hover { background: var(--btn-hover); }
+.tl-add:disabled { background: var(--btn-off); color: var(--btn-off-ink); cursor: wait; }
+.tl-track { position: relative; flex: 1 1 auto; min-width: 0; display: flex; gap: 26px; align-items: flex-start; overflow-x: auto; padding: 4px 6px 4px; }
+.tl-track::before { content: ""; position: absolute; left: 0; right: 0; top: 16px; height: 3px; background: var(--accent); border-radius: 2px; }
+.tl-ms { position: relative; flex: none; display: grid; justify-items: center; gap: 6px; min-width: 70px; }
+.tl-dot { position: relative; width: 24px; height: 24px; border-radius: 50%; border: 3px solid var(--accent); background: var(--paper); cursor: pointer; padding: 0; }
+.tl-dot[aria-pressed="true"] { background: var(--btn); border-color: var(--btn); box-shadow: 0 0 0 3px var(--paper), 0 0 0 5px var(--accent); }
+.tl-dot:focus-visible { outline: 2px solid var(--btn); outline-offset: 3px; }
+.tl-lab { font: 600 13px var(--display); color: var(--muted); white-space: nowrap; cursor: text; max-width: 150px; overflow: hidden; text-overflow: ellipsis; border: 0; background: none; padding: 0; }
+.tl-ms.on .tl-lab { color: var(--fg); }
+.tl-lab input { font: 600 13px var(--display); width: 130px; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 4px; background: var(--paper); color: var(--fg); }
+.tline:not([hidden]) + .ctrls { margin-top: 16px; }
 </style>
 <main>
   <section class="stack">
@@ -403,6 +419,7 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
     <div class="totrow">
   <h2 class="tot"><span class="ti">Total seats: <span id="tottot">0</span><span class="sep">·</span></span><span class="ti">Used: <span id="totused">0</span><span class="sep">·</span></span><span class="ti">Available: <span id="totfree">0</span></span></h2>
     </div>
+    <div class="tline" id="tline" hidden aria-label="Milestones"></div>
     <div class="ctrls">
       <div class="ctrl-left">
         <div class="cgroup viewgrp">
@@ -581,9 +598,96 @@ function watchPlan() {
     }, function () {});
   });
 }
+// ---- Milestones (set by the user 19 Nov 2026). Each milestone keeps its own program and seating (the collections in
+// MS_COLS, stored as "<collection>@<milestone id>"; the first milestone "m0" uses the plain names); the layout, title and
+// files are shared. The list and the milestone shown are kept in meta / milestones. + copies the LAST milestone and opens
+// the copy; changes then go to that milestone only, earlier ones stay as they were. Switching reloads the page.
+var MS_COLS = { names: 1, teams: 1, need: 1, moves: 1, assign: 1, deleted: 1, gone: 1, added: 1, flags: 1, pseat: 1, ptype: 1, pkind: 1 };
+var MS = { list: [{ id: 'm0', label: '' }], active: 'm0', db: null };
+function msCol(c, id) { id = id || MS.active; return MS_COLS[c] && id !== 'm0' ? c + '@' + id : c; }
+function msDb(d) {
+  if (!d || d.__raw) return d;
+  return { __raw: d,
+    collection: function (c) { return d.collection(msCol(c)); },
+    doc: function (p) { var s = String(p).split('/'); return d.doc(msCol(s[0]) + '/' + s.slice(1).join('/')); } };
+}
+function msLoad() {
+  if (!(window.claude && window.claude.use)) return Promise.resolve();
+  return window.claude.use('db').then(function (d) {
+    if (!d) return;
+    MS.db = d;
+    return d.doc('meta/milestones').get().then(function (s) {
+      var v = s && s.exists ? s.data() : null;
+      if (v && Array.isArray(v.list) && v.list.length) {
+        MS.list = v.list.filter(function (m) { return m && m.id; });
+        MS.active = MS.list.some(function (m) { return m.id === v.active; }) ? v.active : MS.list[MS.list.length - 1].id;
+      }
+    });
+  }).catch(function () {});
+}
+function msToday() { try { return new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); } catch (e) { return new Date().toISOString().slice(0, 10); } }
+function msSave() { return MS.db.doc('meta/milestones').set({ list: MS.list, active: MS.active }); }
+function msGo(id) {
+  if (id === MS.active) return;
+  MS.active = id; lnote('Opening the milestone…', true);
+  msSave().then(function () { setTimeout(function () { location.reload(); }, 250); }, function () { lnote('Could not open the milestone. Try again.'); });
+}
+// + : copy every program and seating collection of the last milestone into a new one, then open it
+function msAdd(btn) {
+  var last = MS.list[MS.list.length - 1].id, id = 'm' + Date.now().toString(36), d = MS.db, jobs = [];
+  btn.disabled = true; lnote('Making a new milestone…', true);
+  var p = Promise.resolve();
+  Object.keys(MS_COLS).forEach(function (c) {
+    p = p.then(function () { return d.collection(msCol(c, last)).get(); }).then(function (snap) {
+      snap.docs.forEach(function (doc) { jobs.push([msCol(c, id), doc.id, doc.data()]); });
+    });
+  });
+  p.then(function () {
+    var q = Promise.resolve();
+    for (var i = 0; i < jobs.length; i += 20) (function (part) {
+      q = q.then(function () { return Promise.all(part.map(function (j) { return d.collection(j[0]).doc(j[1]).set(j[2]); })); });
+    })(jobs.slice(i, i + 20));
+    return q;
+  }).then(function () {
+    MS.list.push({ id: id, label: msToday() }); MS.active = id;
+    return msSave();
+  }).then(function () { location.reload(); }, function () { btn.disabled = false; lnote('Could not make the milestone. Try again.'); });
+}
+function msEdit(m, lab) {
+  if (lab.querySelector('input')) return;
+  var inp = document.createElement('input'); inp.type = 'text'; inp.value = m.label || ''; inp.setAttribute('aria-label', 'Milestone text');
+  lab.textContent = ''; lab.appendChild(inp); inp.focus(); inp.select();
+  var done = false;
+  function fin(save) {
+    if (done) return; done = true;
+    if (save) { m.label = inp.value.trim().slice(0, 60); msSave().catch(function () {}); }
+    msRender();
+  }
+  inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') fin(true); else if (e.key === 'Escape') fin(false); e.stopPropagation(); });
+  inp.addEventListener('blur', function () { fin(true); });
+}
+function msRender() {
+  var el = document.getElementById('tline'); if (!el || !MS.db) return;
+  el.hidden = false; el.innerHTML = '';
+  var add = document.createElement('button');
+  add.type = 'button'; add.className = 'tl-add tip'; add.textContent = '+'; add.dataset.tip = 'add a milestone (copies the last one)'; add.setAttribute('aria-label', 'Add a milestone');
+  add.addEventListener('click', function () { msAdd(add); });
+  var track = document.createElement('div'); track.className = 'tl-track';
+  MS.list.forEach(function (m) {
+    var on = m.id === MS.active, w = document.createElement('div'); w.className = 'tl-ms' + (on ? ' on' : '');
+    var dot = document.createElement('button'); dot.type = 'button'; dot.className = 'tl-dot'; dot.setAttribute('aria-pressed', on ? 'true' : 'false');
+    var txt = m.label || (m.id === 'm0' ? 'Start' : msToday());
+    dot.setAttribute('aria-label', (on ? 'Milestone shown: ' : 'Open milestone ') + txt); dot.title = on ? 'Shown now · tap to write its text' : 'Open ' + txt;
+    var lab = document.createElement('span'); lab.className = 'tl-lab'; lab.textContent = txt; lab.title = 'Tap to write text';
+    dot.addEventListener('click', function () { if (on) msEdit(m, lab); else msGo(m.id); });
+    lab.addEventListener('click', function () { msEdit(m, lab); });
+    w.appendChild(dot); w.appendChild(lab); track.appendChild(w);
+  });
+  el.appendChild(add); el.appendChild(track);
+}
 function START() {
   renderLayout(EMBED);
-  pickLayout().then(function (L) { if (L) renderLayout(L); MAIN(); watchPlan(); });
+  pickLayout().then(function (L) { if (L) renderLayout(L); return msLoad(); }).then(function () { MAIN(); watchPlan(); msRender(); });
 }
 
 // ---- Automatic analysis of an uploaded PDF: read its drawing lines, find the desks, group them into teams.
@@ -986,12 +1090,16 @@ function backfillShell(db) {
 }
 // a new floor makes the old seat numbers meaningless: clear names, seats and moves of the drawn teams; keep added teams
 function clearOldSeating(db) {
+  var raw = db && db.__raw ? db.__raw : db;
   var cols = ['names', 'teams', 'need', 'moves', 'assign', 'deleted', 'gone', 'flags', 'pseat', 'pkind'], p = Promise.resolve();
-  cols.forEach(function (c) {
-    p = p.then(function () { return db.collection(c).get(); }).then(function (snap) {
-      var q = Promise.resolve();
-      snap.docs.forEach(function (d) { if (c === 'assign' || c === 'moves' || c === 'pseat' || c === 'pkind' || /^[0-9]+(-x[0-9]+)?$/.test(d.id)) q = q.then(function () { return db.collection(c).doc(d.id).delete(); }); });
-      return q;
+  MS.list.forEach(function (m) {
+    cols.forEach(function (c0) {
+      var c = msCol(c0, m.id);
+      p = p.then(function () { return raw.collection(c).get(); }).then(function (snap) {
+        var q = Promise.resolve();
+        snap.docs.forEach(function (d) { if (c0 === 'assign' || c0 === 'moves' || c0 === 'pseat' || c0 === 'pkind' || /^[0-9]+(-x[0-9]+)?$/.test(d.id)) q = q.then(function () { return raw.collection(c).doc(d.id).delete(); }); });
+        return q;
+      });
     });
   });
   return p;
@@ -1206,7 +1314,7 @@ function MAIN() {
   }
   var store = { names: {}, teams: {}, moves: {}, need: {}, deleted: {}, gone: {}, added: {}, assign: {}, flags: {}, pseat: {}, ptype: {}, pkind: {} }, db = null, LS = (window.__edenLS || "edits:Seat Plan");
   // Undo: every change pushes one step (a list of [collection, id, previous value]).
-  var hist = [], undoing = false, HK = LS + ':undo';
+  var hist = [], undoing = false, HK = LS + ':undo' + (MS.active === 'm0' ? '' : ':' + MS.active);
   try { hist = JSON.parse(localStorage.getItem(HK) || '[]') || []; } catch (e) { hist = []; }
   function keepHist() { try { localStorage.setItem(HK, JSON.stringify(hist)); } catch (e) {} var u = document.getElementById('undo'); if (u) u.disabled = !hist.length; }
   // batch(): run several changes as one Undo step
@@ -1274,6 +1382,7 @@ function MAIN() {
   paint();
   if (window.claude && window.claude.use) window.claude.use('db').then(function (d) {
     if (!d) return;
+    d = msDb(d);   // program and seating collections of the milestone shown
     db = d;
     d.collection('moves').onSnapshot(function (snap) {
       var m = {};
