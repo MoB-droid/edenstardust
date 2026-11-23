@@ -404,7 +404,6 @@
 (() => {
   const SUPABASE_URL = 'https://ldvzztgzamahlftnbawr.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_1BiE8kmut-C1AbXFck3QOA_11tONrHl';
-  const MASTER = 'master@removed';
   const onSite = /(^|\.)edenstardust\.com$/.test(location.hostname);
   const $ = id => document.getElementById(id);
   const gate = $('gate'), bar = $('bar'), caption = $('caption'), who = $('who');
@@ -435,8 +434,8 @@
     if (!inside) { password.value = ''; plansLoadedFor = null; return setRole(null); }
     if (plansLoadedFor !== user.email) { plansLoadedFor = user.email; loadPlans(); }
     const email = (user.email || '').toLowerCase();
-    if (previewing || email === MASTER) return grant('master', email);
-    checkViewer(email);
+    if (previewing) return grant('master', email);
+    checkRole(email);
   }
 
   function setRole(r) {
@@ -453,9 +452,14 @@
     if (entriesLoadedFor !== email) { entriesLoadedFor = email; loadEntries(); }
   }
 
-  async function checkViewer(email) {
+  // the master check runs in Supabase (rpc is_master), so the master's email is not in the page
+  async function checkRole(email) {
     if (roleCheckFor === email || !sb) return;
     roleCheckFor = email;
+    try {
+      const m = await sb.rpc('is_master');
+      if (!m.error && m.data === true) { if (roleCheckFor === email) grant('master', email); return; }
+    } catch (e) {}
     try {
       const { data, error } = await sb.from('entry_viewers').select('email').eq('email', email).maybeSingle();
       if (!error && data && roleCheckFor === email) grant('viewer', email);
@@ -467,7 +471,7 @@
   function renderShare() {
     const shared = new Set(viewers.map(v => v.email));
     const candidates = [...new Set(lastRows.map(r => (r.email || '').toLowerCase()))]
-      .filter(e => e && e !== MASTER && !shared.has(e)).sort();
+      .filter(e => e && e !== (who.textContent || '').toLowerCase() && !shared.has(e)).sort();
     shareSelect.replaceChildren();
     const first = document.createElement('option');
     first.value = ''; first.textContent = candidates.length ? 'Choose a person…' : 'No other signed-up people to add';
