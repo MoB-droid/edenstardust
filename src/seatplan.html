@@ -45,6 +45,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 /* thin black lines on the building shell and the core */
 #outlines path, #outlines rect { fill: none; stroke: #000000; stroke-width: 2; stroke-linejoin: miter; pointer-events: none; }
 .dk rect { fill: var(--tc, var(--desk)); fill-opacity: 1; stroke: var(--desk-edge); stroke-width: 1.4; }
+/* chairs: a grey dot under each desk's seat edge, drawn before the desk; never shaded */
+.dk circle.ch { fill: #8C8C8C; stroke: none; pointer-events: none; }
 .dk text { fill: var(--tci, var(--ink)); font: 600 15px var(--mono); text-anchor: middle; dominant-baseline: central; }
 .dk { cursor: pointer; }
 /* person names on desks: bigger and bold (set by the user 18 Nov 2026) */
@@ -495,6 +497,25 @@ function sideOf(E, b, outside) {
   var dN = cy - E[1], dS = E[3] - cy, dW = cx - E[0], dE = E[2] - cx, m = Math.min(dN, dS, dW, dE);
   return m > 400 && !outside ? 'I' : m === dN ? 'N' : m === dS ? 'S' : m === dW ? 'W' : 'E';
 }
+// Chairs (set by the user 23 Nov 2026): one per desk, at the middle of a long edge, 22 units out. A desk touching
+// another back to back (long side) has its chair on the other long side; touching on both long sides = no chair;
+// otherwise the long side with more free room (no desk within 140 units counts as free), ties below / right.
+function chairsFor(desks) {
+  return desks.map(function (a, i) {
+    var hz = a[2] - a[0] >= a[3] - a[1], u0 = hz ? a[0] : a[1], u1 = hz ? a[2] : a[3], e0 = hz ? a[1] : a[0], e1 = hz ? a[3] : a[2];
+    var L = u1 - u0, lo = 140, hi = 140, tlo = false, thi = false;
+    desks.forEach(function (b, j) {
+      if (i === j) return;
+      var ov = Math.min(u1, hz ? b[2] : b[3]) - Math.max(u0, hz ? b[0] : b[1]); if (ov <= 2) return;
+      var dLo = e0 - (hz ? b[3] : b[2]), dHi = (hz ? b[1] : b[0]) - e1;
+      if (dLo > -3) { lo = Math.min(lo, Math.max(0, dLo)); if (dLo < 3 && ov > 0.5 * L) tlo = true; }
+      if (dHi > -3) { hi = Math.min(hi, Math.max(0, dHi)); if (dHi < 3 && ov > 0.5 * L) thi = true; }
+    });
+    if (tlo && thi) return null;
+    var dir = tlo ? 1 : thi ? -1 : lo > hi ? -1 : 1, m = (u0 + u1) / 2, v = dir > 0 ? e1 + 22 : e0 - 22;
+    return hz ? [m, v] : [v, m];
+  });
+}
 function renderLayout(L) {
   LAYOUT = L;
   var E = L.extent, X0 = E[0], Y0 = E[1], X1 = E[2], Y1 = E[3], M = L.margin || 250;
@@ -508,11 +529,14 @@ function renderLayout(L) {
   else bg += '<g class="emptyplan"><rect x="' + X0 + '" y="' + Y0 + '" width="' + (X1 - X0) + '" height="' + (Y1 - Y0) + '" rx="24"/><text x="' + (X0 + X1) / 2 + '" y="' + ((Y0 + Y1) / 2 - 40) + '">No layout yet</text><text class="sub" x="' + (X0 + X1) / 2 + '" y="' + ((Y0 + Y1) / 2 + 50) + '">Press Upload layout to add the floor plan</text></g>';
   document.getElementById('bgwrap').innerHTML = bg;
   var D = L.desks || [], teams = {}, order = [], dk = [];
+  // chairs: stored with the layout (L.chairs, one [cx, cy] or null per desk), else worked out from the desks
+  var CH = Array.isArray(L.chairs) ? L.chairs : chairsFor(D);
   D.forEach(function (d, i) {
     var t = String(d[4]), s = i + 1, x0 = d[0], y0 = d[1], x1 = d[2], y1 = d[3], w = x1 - x0, h = y1 - y0;
     if (!teams[t]) { teams[t] = []; order.push(t); }
     teams[t].push({ s: s, r: d });
-    dk.push('<g class="dk" data-s="' + s + '" data-t="' + t + '" data-x="' + x0 + '" data-y="' + y0 + '" data-w="' + f1(w) + '" data-h="' + f1(h) + '"><rect x="' + x0 + '" y="' + y0 + '" width="' + f1(w) + '" height="' + f1(h) + '"/><text class="dn" x="' + f1((x0 + x1) / 2) + '" y="' + f1((y0 + y1) / 2) + '">' + s + '</text><text class="pn" x="' + f1((x0 + x1) / 2) + '" y="' + f1((y0 + y1) / 2) + '"></text></g>');
+    var chr = CH[i], chs = chr && isFinite(chr[0]) && isFinite(chr[1]) ? '<circle class="ch" cx="' + f1(chr[0]) + '" cy="' + f1(chr[1]) + '" r="13"/>' : '';
+    dk.push('<g class="dk" data-s="' + s + '" data-t="' + t + '" data-x="' + x0 + '" data-y="' + y0 + '" data-w="' + f1(w) + '" data-h="' + f1(h) + '">' + chs + '<rect x="' + x0 + '" y="' + y0 + '" width="' + f1(w) + '" height="' + f1(h) + '"/><text class="dn" x="' + f1((x0 + x1) / 2) + '" y="' + f1((y0 + y1) / 2) + '">' + s + '</text><text class="pn" x="' + f1((x0 + x1) / 2) + '" y="' + f1((y0 + y1) / 2) + '"></text></g>');
   });
   document.getElementById('desks').innerHTML = dk.join('');
   // team markers: outside the building on the side given (or nearest), spread so markers on one side never overlap
@@ -1724,15 +1748,23 @@ function MAIN() {
       for (var j = rows.length - 1; j >= n; j--) rows[j].remove();
       var g = document.querySelector('#teams .team[data-t="' + t + '"]');
       if (!g) {
-        // park it in the bottom margin, 220 pt apart, skipping spots taken by other markers
-        var cy = EXT[3] + 140, cx = EXT[0] + 180, taken2 = [];
-        document.querySelectorAll('#teams .team').forEach(function (o) {
-          var r = o.querySelector('rect'); if (!r || o.style.display === 'none') return;
-          var ox = +r.getAttribute('x') + +r.getAttribute('width') / 2, oy = +r.getAttribute('y') + 32;
-          if (Math.abs(oy - cy) < 120) taken2.push(ox);
-        });
-        while (taken2.some(function (ox) { return Math.abs(ox - cx) < 680; })) cx += 680;
-        if (cx > EXT[2] + 150) { cx = EXT[0] - 100; cy = EXT[3] - 120 - k * 280; }
+        // park it close under the plan, 680 pt apart, in rows 300 pt apart, skipping spots taken by other markers
+        var cy = EXT[3] + 140, cx = EXT[0] + 180, taken2, rowGuard = 0;
+        var rowTaken = function (y) {
+          var out = [];
+          document.querySelectorAll('#teams .team').forEach(function (o) {
+            var r = o.querySelector('rect'); if (!r || o.style.display === 'none') return;
+            var ox = +r.getAttribute('x') + +r.getAttribute('width') / 2, oy = +r.getAttribute('y') + 32;
+            if (Math.abs(oy - y) < 120) out.push(ox);
+          });
+          return out;
+        };
+        while (rowGuard++ < 200) {
+          taken2 = rowTaken(cy);
+          while (taken2.some(function (ox) { return Math.abs(ox - cx) < 680; })) cx += 680;
+          if (cx <= EXT[2] + 150 || cx === EXT[0] + 180) break;
+          cx = EXT[0] + 180; cy += 300;
+        }
         g = document.createElementNS(SVGNS, 'g');
         g.setAttribute('class', 'team'); g.setAttribute('data-t', t); g.setAttribute('data-added', '1');
         g.setAttribute('role', 'button'); g.setAttribute('tabindex', '0'); g.setAttribute('aria-pressed', 'false');
