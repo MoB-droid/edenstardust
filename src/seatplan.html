@@ -392,6 +392,12 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
 .tl-ms.on .tl-lab { color: var(--fg); }
 .tl-lab input { font: 600 13px var(--display); width: 130px; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 4px; background: var(--paper); color: var(--fg); }
 .tline:not([hidden]) + .ctrls { margin-top: 16px; }
+/* red flags (set by the user 24 Nov 2026): notes on the plan, drawn above everything */
+#flags, #flags * { pointer-events: none; }
+#flags .fl-line { stroke: var(--clash); stroke-width: 5; stroke-linecap: round; fill: none; }
+#flags .fl-pole { stroke: var(--clash); stroke-width: 7; stroke-linecap: round; fill: none; }
+#flags .fl-pen { fill: var(--clash); stroke: none; }
+#flags .fl-txt { fill: var(--clash); font: 700 46px var(--display); dominant-baseline: central; text-anchor: start; letter-spacing: normal; paint-order: stroke; stroke: var(--plan); stroke-width: 10px; stroke-linejoin: round; }
 </style>
 <main>
   <section class="stack">
@@ -406,6 +412,7 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
         <g id="bgwrap"></g>
         <g id="desks"></g>
         <g id="teams"></g>
+        <g id="flags"></g>
       </svg>
     </div>
   </section>
@@ -570,6 +577,7 @@ function renderLayout(L) {
   });
   document.getElementById('teams').innerHTML = tm.join('');
   scaleMarkers();
+  drawFlags(L);
   var rows = order.filter(function (t) { return t !== '0'; }).map(function (t) {
     var ds = teams[t];
     return '<tbody class="grp" data-t="' + t + '"><tr class="gh"><td><button type="button" class="fold" aria-expanded="false"><span class="car" aria-hidden="true"></span>T' + t + '</button></td><td class="tn ed" data-k="teams" data-id="' + t + '" title="Double-click to edit"></td><td class="num cnt ed" data-k="need" data-id="' + t + '" data-def="' + ds.length + '" title="Double-click to edit">' + ds.length + '</td><td></td><td class="del"><span class="acts"><button type="button" class="addbtn tip" data-tip="add team member" data-t="' + t + '" aria-label="Add a person to team T' + t + '">+</button><button type="button" class="delbtn" data-t="' + t + '" aria-label="Delete team T' + t + '">Delete</button></span></td></tr>' +
@@ -587,6 +595,71 @@ function renderLayout(L) {
   if (L.img && !/^data:/.test(L.img) && window.fetch) fetch(L.img).then(function (r) { return r.ok ? r.blob() : null; }).then(function (b) {
     if (!b) return; var fr = new FileReader(); fr.onload = function () { var im = document.getElementById('bgimage'); if (im) im.setAttribute('href', fr.result); }; fr.readAsDataURL(b);
   }).catch(function () {});
+}
+// ---- Red flags (set by the user 24 Nov 2026): L.flags = [{ n, text, at: [x, y], pos: [x, y], w }]. at = the spot flagged
+// (end of the red line, optional); pos = foot of the pole (the label sits there; missing = placed automatically just
+// outside the building, as close to at as possible); w = max text width (wraps). Drawn in #flags, above everything.
+// FLAG_BOXES = the label boxes, kept free of team markers (clearMarkers).
+var FLAG_BOXES = [], FL_POLE = 120, FL_PW = 80, FL_PH = 56, FL_FS = 46, FL_LH = 54;
+function flagLines(s, w) {
+  var cw = FL_FS * 0.5, max = w > 0 ? Math.max(1, Math.floor(w / cw)) : Infinity, out = [], cur = '';
+  String(s).split(/\s+/).forEach(function (word) {
+    if (!word) return;
+    if (!cur) cur = word; else if ((cur + ' ' + word).length <= max) cur += ' ' + word; else { out.push(cur); cur = word; }
+  });
+  if (cur || !out.length) out.push(cur);
+  return out;
+}
+function drawFlags(L) {
+  var g = document.getElementById('flags'); FLAG_BOXES = [];
+  if (!g) return;
+  var F = Array.isArray(L.flags) ? L.flags : [];
+  if (!F.length) { g.innerHTML = ''; return; }
+  // the building: the extent, or for a sheet kept as uploaded the desks' area plus the facade
+  var E = L.extent, B = E.slice();
+  if (L.asIs && L.desks && L.desks.length) {
+    var bx = [Infinity, Infinity, -Infinity, -Infinity];
+    L.desks.forEach(function (d) { bx[0] = Math.min(bx[0], d[0]); bx[1] = Math.min(bx[1], d[1]); bx[2] = Math.max(bx[2], d[2]); bx[3] = Math.max(bx[3], d[3]); });
+    B = [Math.max(E[0], bx[0] - 150), Math.max(E[1], bx[1] - 150), Math.min(E[2], bx[2] + 150), Math.min(E[3], bx[3] + 150)];
+  }
+  var GAP = 40, out = [];
+  function ok(a) { return Array.isArray(a) && a.length >= 2 && isFinite(a[0]) && isFinite(a[1]); }
+  function boxAt(px, py, tw, nl) { return { x0: px - 12, y0: py - FL_POLE - 12, x1: px + FL_PW + 16 + tw + 12, y1: Math.max(py, py - FL_POLE + FL_PH / 2 + (nl - 1) * FL_LH + FL_FS / 2) + 12 }; }
+  function hit(b) { return FLAG_BOXES.some(function (o) { return b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0; }); }
+  F.forEach(function (f, i) {
+    if (!f) return;
+    var lab = (f.n !== undefined && f.n !== null && f.n !== '' ? f.n + ' ' : '') + (f.text || '');
+    var lines = flagLines(lab, +f.w || 0), tw = 0;
+    lines.forEach(function (s) { tw = Math.max(tw, s.length * FL_FS * 0.5); });
+    var bh = Math.max(FL_POLE, FL_PH / 2 + (lines.length - 1) * FL_LH + FL_FS / 2), bw = FL_PW + 16 + tw;
+    var at = ok(f.at) ? [+f.at[0], +f.at[1]] : null, px, py, side = 'N';
+    if (ok(f.pos)) { px = +f.pos[0]; py = +f.pos[1]; }
+    else {
+      var a = at || [B[0] + 60, B[1]];
+      var dN = a[1] - B[1], dS = B[3] - a[1], dW = a[0] - B[0], dE = B[2] - a[0], m = Math.min(dN, dS, dW, dE);
+      side = !at ? 'N' : m === dN ? 'N' : m === dS ? 'S' : m === dW ? 'W' : 'E';
+      // the pole foot right outside that facade, the label running away from the building
+      if (side === 'N') { px = a[0]; py = B[1] - GAP - (bh - FL_POLE); }
+      else if (side === 'S') { px = a[0]; py = B[3] + GAP + FL_POLE; }
+      else if (side === 'W') { px = B[0] - GAP - bw; py = a[1] + FL_POLE / 2; }
+      else { px = B[2] + GAP; py = a[1] + FL_POLE / 2; }
+      // keep clear of the flags placed before: slide along the facade
+      var guard = 0, horiz = side === 'N' || side === 'S';
+      while (guard++ < 40 && hit(boxAt(px, py, tw, lines.length))) { if (horiz) px += bw + 30; else py += bh + 30; }
+    }
+    var top = py - FL_POLE, h = [];
+    if (at) h.push('<line class="fl-line" x1="' + f1(px) + '" y1="' + f1(py) + '" x2="' + f1(at[0]) + '" y2="' + f1(at[1]) + '"/>');
+    h.push('<line class="fl-pole" x1="' + f1(px) + '" y1="' + f1(py) + '" x2="' + f1(px) + '" y2="' + f1(top) + '"/>');
+    h.push('<path class="fl-pen" d="M' + f1(px) + ' ' + f1(top) + 'L' + f1(px + FL_PW) + ' ' + f1(top + FL_PH / 2) + 'L' + f1(px) + ' ' + f1(top + FL_PH) + 'Z"/>');
+    lines.forEach(function (s, k) {
+      h.push('<text class="fl-txt" x="' + f1(px + FL_PW + 16) + '" y="' + f1(top + FL_PH / 2 + k * FL_LH) + '">' + xesc(s) + '</text>');
+    });
+    out.push('<g class="flag" data-n="' + xesc(f.n === undefined ? i + 1 : f.n) + '">' + h.join('') + '</g>');
+    FLAG_BOXES.push(boxAt(px, py, tw, lines.length));
+  });
+  g.innerHTML = out.join('');
+  // keep #flags the last thing drawn, whatever was added to the plan after it
+  if (g.parentNode && g.parentNode.lastElementChild !== g) g.parentNode.appendChild(g);
 }
 // Start: draw the built-in layout, then (up to 4 s) check the database for a newer automatic one.
 function pickLayout() {
@@ -1922,7 +1995,16 @@ function MAIN() {
   function fitView() {
     if (dragT) return;
     var b = null;
+    // parked markers sit inside the plan's own area and never grow it (set by the user 24 Nov 2026)
+    var pk = Array.prototype.filter.call(document.querySelectorAll('#teams .team, #teams .lead'), function (el) { return PARK[el.dataset.t] && el.style.display !== 'none'; });
+    pk.forEach(function (el) { el.style.display = 'none'; });
     try { b = document.getElementById('teams').getBBox(); } catch (e) {}
+    pk.forEach(function (el) { el.style.display = ''; });
+    // red flags placed in the margin stay in view too
+    try {
+      var fb = document.getElementById('flags').getBBox();
+      if (fb && fb.width) b = b && b.width ? (function () { var x0 = Math.min(b.x, fb.x), y0 = Math.min(b.y, fb.y); return { x: x0, y: y0, width: Math.max(b.x + b.width, fb.x + fb.width) - x0, height: Math.max(b.y + b.height, fb.y + fb.height) - y0 }; })() : fb;
+    } catch (e) {}
     var v = VB0.slice();
     if (b && b.width) {
       var x0 = Math.min(v[0], b.x - 30), y0 = Math.min(v[1], b.y - 30), x1 = Math.max(v[0] + v[2], b.x + b.width + 30), y1 = Math.max(v[1] + v[3], b.y + b.height + 30);
@@ -2081,7 +2163,7 @@ function MAIN() {
     PLACED.forEach(function (p) { if (sides[p.side]) sides[p.side].push(p); });
     // markers still at their original spot are fixed obstacles
     document.querySelectorAll('#teams .team').forEach(function (g) {
-      if (g.style.display === 'none' || g.getAttribute('transform')) return;
+      if (g.style.display === 'none' || g.getAttribute('transform') || PARK[g.dataset.t]) return;
       var b = markerBase(g), sd = b.x < EXT[0] ? 'W' : b.x > EXT[2] ? 'E' : b.y < EXT[1] ? 'N' : b.y > EXT[3] ? 'S' : null;
       if (sd) sides[sd].push({ fixed: true, x: b.x, y: b.y });
     });
@@ -2108,7 +2190,7 @@ function MAIN() {
     // interior markers (in the core): move down past any marker they would cover
     var taken = [];
     document.querySelectorAll('#teams .team').forEach(function (g) {
-      if (g.style.display === 'none' || g.getAttribute('transform')) return;
+      if (g.style.display === 'none' || g.getAttribute('transform') || PARK[g.dataset.t]) return;
       var b = markerBase(g); taken.push({ x: b.x, y: b.y });
     });
     PLACED.forEach(function (p) { if (p.side !== 'I') taken.push(p); });
@@ -2142,13 +2224,14 @@ function MAIN() {
   function clearMarkers() {
     var list = [];
     document.querySelectorAll('#teams .team').forEach(function (g) {
-      if (g.style.display === 'none' || g.dataset.t === dragT) return;
+      if (g.style.display === 'none' || g.dataset.t === dragT || PARK[g.dataset.t]) return;
       var pl = null; PLACED.forEach(function (q) { if (q.g === g) pl = q; });
       var side = pl ? pl.side : null, b = markerBase(g);
       if (!side) side = b.x < EXT[0] ? 'W' : b.x > EXT[2] ? 'E' : b.y < EXT[1] ? 'N' : b.y > EXT[3] ? 'S' : 'I';
       list.push({ g: g, side: side, lead: document.querySelector('#teams .lead[data-t="' + g.dataset.t + '"]') });
     });
-    var done = [];
+    // red flag labels are taken space: markers move off them like off another marker
+    var done = FLAG_BOXES.slice();
     if (dragT) { var dg = document.querySelector('#teams .team[data-t="' + dragT + '"]'), db0 = dg && svgBox(dg); if (db0) done.push(db0); }
     list.forEach(function (m) {
       var dir = { N: [0, -1], S: [0, 1], W: [-1, 0], E: [1, 0], I: [0, 1] }[m.side] || [0, 1];
@@ -2173,6 +2256,122 @@ function MAIN() {
       done.push(box);
     });
   }
+  // ---- Parked markers (set by the user 24 Nov 2026): teams holding no desk get their markers in a tidy aligned grid
+  // (same column x, equal row spacing) in blank space of the plan's own area (the viewBox renderLayout set, never grown),
+  // as close to the drawing as possible: no desks, no ink of the plan picture, no other markers or their lines, no red flags.
+  // Too many for one blank area: the biggest grid that fits goes nearest, the rest fill the next blank area.
+  var PARK = {}, INK = null, INK_CELL = 16;
+  // ink of the plan picture, read once (cells of 16 units: 1 = something drawn); null until read, false = cannot be read
+  function loadInk(tries) {
+    var im = document.getElementById('bgimage');
+    if (!im) { INK = false; return; }
+    var href = im.getAttribute('href') || '';
+    if (!/^data:/.test(href) && (tries || 0) < 16) { setTimeout(function () { loadInk((tries || 0) + 1); }, 500); return; }
+    var ix = +im.getAttribute('x'), iy = +im.getAttribute('y'), iw = +im.getAttribute('width'), ih = +im.getAttribute('height');
+    var pic = new Image();
+    pic.onload = function () {
+      try {
+        var k = 4, cw = Math.max(1, Math.ceil(iw / k)), ch = Math.max(1, Math.ceil(ih / k)), c = document.createElement('canvas');
+        c.width = cw; c.height = ch;
+        var ctx = c.getContext('2d'); ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cw, ch); ctx.drawImage(pic, 0, 0, cw, ch);
+        var px = ctx.getImageData(0, 0, cw, ch).data, step = INK_CELL / k, cols = Math.ceil(cw / step), rows = Math.ceil(ch / step), g = new Uint8Array(cols * rows);
+        for (var y = 0; y < ch; y++) for (var x = 0; x < cw; x++) {
+          var i = (y * cw + x) * 4;
+          if (0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2] < 238) g[Math.floor(y / step) * cols + Math.floor(x / step)] = 1;
+        }
+        INK = { x: ix, y: iy, cols: cols, rows: rows, g: g };
+      } catch (e) { INK = false; }
+      relayout();
+    };
+    pic.onerror = function () { INK = false; };
+    pic.src = href;
+  }
+  function parkMarkers() {
+    var ids = teamIds.filter(function (t) { return PARK[t]; }), items = [];
+    ids.forEach(function (t) {
+      var g = document.querySelector('#teams .team[data-t="' + t + '"]'); if (!g || g.style.display === 'none') return;
+      var lead = document.querySelector('#teams .lead[data-t="' + t + '"]'); if (lead) lead.style.display = 'none';
+      g.removeAttribute('transform');
+      var b = markerBase(g), sh = g.querySelector('.short');
+      // "seats short" right under its own pill, so in the grid it reads with the pill above it, not the one below
+      if (sh) { if (sh.dataset.y0 === undefined) sh.dataset.y0 = sh.getAttribute('y'); sh.setAttribute('y', (b.y + 86).toFixed(1)); sh.setAttribute('x', b.x.toFixed(1)); sh.style.textAnchor = 'middle'; }
+      var bx = svgBox(g); if (!bx) return;
+      items.push({ g: g, b: b, r: { x0: bx.x0 - b.x, y0: bx.y0 - b.y, x1: bx.x1 - b.x, y1: bx.y1 - b.y } });
+    });
+    if (!items.length) return;
+    var V = VB0, C = INK_CELL, GC = Math.ceil(V[2] / C), GR = Math.ceil(V[3] / C), occ = new Uint8Array(GC * GR);
+    function mark(x0, y0, x1, y1) {
+      var c0 = Math.max(0, Math.floor((x0 - V[0]) / C)), c1 = Math.min(GC - 1, Math.floor((x1 - V[0]) / C));
+      var r0 = Math.max(0, Math.floor((y0 - V[1]) / C)), r1 = Math.min(GR - 1, Math.floor((y1 - V[1]) / C));
+      for (var r = r0; r <= r1; r++) for (var c = c0; c <= c1; c++) occ[r * GC + c] = 1;
+    }
+    // the drawing: desks, and the building (outline grid, else the picture's ink, else the desks' area)
+    var BB = [Infinity, Infinity, -Infinity, -Infinity];
+    allDesks.forEach(function (d) {
+      var x = +d.dataset.x, y = +d.dataset.y, w = +d.dataset.w, h = +d.dataset.h;
+      mark(x - 40, y - 40, x + w + 40, y + h + 40);
+      BB = [Math.min(BB[0], x), Math.min(BB[1], y), Math.max(BB[2], x + w), Math.max(BB[3], y + h)];
+    });
+    if (!isFinite(BB[0])) BB = EXT.slice();
+    if (SHELL) { for (var r = 0; r < GR; r++) for (var c = 0; c < GC; c++) if (cellAt(V[0] + (c + 0.5) * C, V[1] + (r + 0.5) * C) !== 1) occ[r * GC + c] = 1; }
+    else if (INK) {
+      for (var r2 = 0; r2 < INK.rows; r2++) for (var c2 = 0; c2 < INK.cols; c2++) if (INK.g[r2 * INK.cols + c2]) {
+        var ax = INK.x + c2 * C, ay = INK.y + r2 * C; mark(ax - 24, ay - 24, ax + C + 24, ay + C + 24);
+      }
+    } else if (LAYOUT && LAYOUT.img) mark(EXT[0], EXT[1], EXT[2], EXT[3]);   // picture not readable: keep off the whole building
+    else mark(BB[0] - 150, BB[1] - 150, BB[2] + 150, BB[3] + 150);
+    // other markers and their lines, red flags
+    document.querySelectorAll('#teams .team').forEach(function (g) {
+      if (g.style.display === 'none' || PARK[g.dataset.t]) return;
+      var b = svgBox(g); if (b) mark(b.x0 - MARK_GAP, b.y0 - MARK_GAP, b.x1 + MARK_GAP, b.y1 + MARK_GAP);
+    });
+    document.querySelectorAll('#teams .lead').forEach(function (l) {
+      if (l.style.display === 'none' || PARK[l.dataset.t]) return;
+      var x1 = +l.getAttribute('x1'), y1 = +l.getAttribute('y1'), x2 = +l.getAttribute('x2'), y2 = +l.getAttribute('y2');
+      mark(Math.min(x1, x2) - 16, Math.min(y1, y2) - 16, Math.max(x1, x2) + 16, Math.max(y1, y2) + 16);
+    });
+    FLAG_BOXES.forEach(function (f) { mark(f.x0 - MARK_GAP, f.y0 - MARK_GAP, f.x1 + MARK_GAP, f.y1 + MARK_GAP); });
+    // one grid cell = the widest / tallest parked marker plus a gap; all markers centred in their cells
+    var rx0 = Infinity, ry0 = Infinity, rx1 = -Infinity, ry1 = -Infinity;
+    items.forEach(function (it) { rx0 = Math.min(rx0, it.r.x0); ry0 = Math.min(ry0, it.r.y0); rx1 = Math.max(rx1, it.r.x1); ry1 = Math.max(ry1, it.r.y1); });
+    var hw = Math.max(-rx0, rx1);
+    function tryPlace(k, gx, gy, any) {
+      var cw = Math.ceil((2 * hw + gx) / C), chh = Math.ceil((ry1 - ry0 + gy) / C), best = null;
+      // summed-area table: free blocks are found in one step each
+      var S = new Int32Array((GC + 1) * (GR + 1));
+      for (var r = 0; r < GR; r++) for (var c = 0; c < GC; c++) S[(r + 1) * (GC + 1) + c + 1] = (any ? 0 : occ[r * GC + c]) + S[r * (GC + 1) + c + 1] + S[(r + 1) * (GC + 1) + c] - S[r * (GC + 1) + c];
+      function sum(c0, r0, c1, r1) { return S[r1 * (GC + 1) + c1] - S[r0 * (GC + 1) + c1] - S[r1 * (GC + 1) + c0] + S[r0 * (GC + 1) + c0]; }
+      for (var cols = 1; cols <= k; cols++) {
+        var rows = Math.ceil(k / cols), W = cols * cw, H = rows * chh;
+        if (W > GC || H > GR) continue;
+        for (var r0 = 0; r0 + H <= GR; r0++) for (var c0 = 0; c0 + W <= GC; c0++) {
+          if (sum(c0, r0, c0 + W, r0 + H)) continue;
+          var x0 = V[0] + c0 * C, y0 = V[1] + r0 * C, x1 = x0 + W * C, y1 = y0 + H * C;
+          var gapX = Math.max(0, BB[0] - x1, x0 - BB[2]), gapY = Math.max(0, BB[1] - y1, y0 - BB[3]);
+          var sc = Math.sqrt(gapX * gapX + gapY * gapY) * 3 + Math.hypot((x0 + x1) / 2 - (BB[0] + BB[2]) / 2, (y0 + y1) / 2 - (BB[1] + BB[3]) / 2) * 0.1 + (W + H) * C * 0.05;
+          if (!best || sc < best.sc) best = { sc: sc, c0: c0, r0: r0, cols: cols, cw: cw, ch: chh };
+        }
+      }
+      return best;
+    }
+    var left = items.slice(), guard = 0;
+    while (left.length && guard++ < 20) {
+      var pl = null, k = left.length;
+      // the most markers one blank area holds (roomy spacing first, then tighter)
+      for (; k >= 1 && !pl; k--) pl = tryPlace(k, 60, 40) || tryPlace(k, 24, 16);
+      k++;
+      if (!pl) { k = left.length; pl = tryPlace(k, 24, 16, true); }   // no blank area at all: still inside the plan's area
+      if (!pl) break;
+      left.splice(0, k).forEach(function (it, i) {
+        var col = i % pl.cols, row = Math.floor(i / pl.cols);
+        var cx = V[0] + (pl.c0 + col * pl.cw) * C + pl.cw * C / 2, top = V[1] + (pl.r0 + row * pl.ch) * C;
+        var ty = top + (pl.ch * C - (ry1 - ry0)) / 2 - ry0;
+        it.g.setAttribute('transform', 'translate(' + (cx - it.b.x).toFixed(1) + ' ' + (ty - it.b.y).toFixed(1) + ')');
+      });
+      mark(V[0] + pl.c0 * C, V[1] + pl.r0 * C, V[0] + (pl.c0 + pl.cols * pl.cw) * C - 1, V[1] + (pl.r0 + Math.ceil(k / pl.cols) * pl.ch) * C - 1);
+    }
+  }
+  if (LAYOUT && LAYOUT.img && !SHELL) loadInk(0);
   function relayout() {
     PLACED = [];
     syncAdded();
@@ -2328,8 +2527,17 @@ function MAIN() {
       if (c && c.length > 1) { d.classList.remove('mv'); d.classList.add('ov'); }
       else if (!c) d.classList.add('free');   // unused: white with the desk outline
     });
+    // parked = a team holding no desk (Suggest found none, or never seated): its marker goes into the parking block
+    PARK = {};
+    teamIds.forEach(function (t) {
+      if (!store.deleted[t] && t !== dragT && !(CUR[t] || []).length) { PARK[t] = true; return; }
+      // no longer parked: its "seats short" goes back where it was (placed markers had it set again by setLabels)
+      var g = document.querySelector('#teams .team[data-t="' + t + '"]'), sh = g && g.querySelector('.short');
+      if (sh && sh.dataset.y0 !== undefined) { if (!g.dataset.side0) { sh.setAttribute('y', sh.dataset.y0); sh.setAttribute('x', markerBase(g).x.toFixed(1)); sh.style.textAnchor = ''; } delete sh.dataset.y0; }
+    });
     spreadMarkers();
     clearMarkers();
+    parkMarkers();
     fitView();
     paintShade();
     // a selected person (orange row) and a selected desk follow the person to their desk now
