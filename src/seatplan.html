@@ -394,6 +394,18 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
 .tline:not([hidden]) + .ctrls { margin-top: 16px; }
 /* red flags (set by the user 24 Nov 2026): notes on the plan, drawn above everything */
 #flags, #flags * { pointer-events: none; }
+/* Show / hide flags: top right of the plan frame, the size and look of the site's share button (left of it there) */
+.flagtog { position: absolute; z-index: 8; width: 44px; height: 44px; display: grid; place-items: center; padding: 0; background: #FFFFFF; color: #000000;
+  border: 1px solid var(--accent); border-radius: 8px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+.flagtog:hover { background: #F7F7F7; }
+.flagtog:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.flagtog svg { width: 22px; height: 22px; display: block; }
+.flagtog .pen { fill: var(--clash); }
+.flagtog .slash { display: none; }
+.flagtog[aria-pressed="false"] { background: var(--btn-off); color: var(--btn-off-ink); }
+.flagtog[aria-pressed="false"] .pen { fill: none; stroke: currentColor; }
+.flagtog[aria-pressed="false"] .slash { display: inline; }
+.flagtog[hidden] { display: none; }
 #flags .fl-line { stroke: var(--clash); stroke-width: 5; stroke-linecap: round; fill: none; }
 #flags .fl-pole { stroke: var(--clash); stroke-width: 7; stroke-linecap: round; fill: none; }
 #flags .fl-pen { fill: var(--clash); stroke: none; }
@@ -422,6 +434,11 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
 .sum-types .tt:hover { border-color: var(--btn-soft); }
 #desks .dk.tyhi rect, #desks .dk.tyhi.free rect, #desks .dk.tyhi.th rect, #desks .dk.tyhi.free:not(.hi):not(.th):not(.ts):not(.drop) rect { fill: var(--tyhi); fill-opacity: 1; stroke: var(--tyhi-edge); stroke-width: 3; }
 #desks .dk.tyhi text, #desks .dk.tyhi.free:not(.hi):not(.th):not(.ts) text { fill: #ffffff; }
+/* type rows stay readable in a narrow right column: the label column shrinks first, the three number tiles always show */
+.sum-types { grid-template-columns: minmax(64px, 1fr) repeat(3, minmax(38px, 76px)); width: 100%; box-sizing: border-box; }
+.sum-types .tt { display: block; min-width: 0; width: 100%; box-sizing: border-box; color: #000000; background: #FFFFFF; -webkit-appearance: none; appearance: none; }
+.sum-types .tt.free { color: var(--accent); }
+@media (max-width: 380px) { .sum-types .tl small { display: none; } }
 </style>
 <main>
   <section class="stack">
@@ -429,6 +446,7 @@ main > section.stack:first-child.dropping .planwrap { opacity: .5; }
       <img class="logo" src="logo.png" alt="">
       <h2 id="ltitle" class="ltitle" data-def="Layout · New floor" title="Click to rename" role="button" tabindex="0">Layout · New floor</h2>
     </div>
+    <button type="button" id="flagtog" class="flagtog tip" data-tip="Show / hide flags" title="Show / hide flags" aria-label="Show / hide flags" aria-pressed="true" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 21V4"/><path class="pen" d="M6 4h11l-3 4 3 4H6z"/><path class="slash" d="M3 3l18 18"/></svg></button>
     <div class="planwrap" id="wrap">
       <svg id="plan" data-ext="0 0 2400 1700" viewBox="-250 -250 2900 2200" role="img" aria-labelledby="pt pd">
         <title id="pt">Seat Plan</title>
@@ -650,6 +668,9 @@ function renderLayout(L) {
 // (end of the red line, optional); pos = foot of the pole (the label sits there; missing = placed automatically just
 // outside the building, as close to at as possible); w = max text width (wraps). Drawn in #flags, above everything.
 // FLAG_BOXES = the label boxes, kept free of team markers (clearMarkers).
+// flagsShown(): the Show / hide flags button (top right of the plan frame), remembered per plan in this browser
+function flagsKey() { return (EMBED.lskey || 'edits:Seat Plan') + ':flags'; }
+function flagsShown() { try { return localStorage.getItem(flagsKey()) !== 'off'; } catch (e) { return true; } }
 var FLAG_BOXES = [], FL_POLE = 120, FL_PW = 80, FL_PH = 56, FL_FS = 46, FL_LH = 54;
 function flagLines(s, w) {
   var cw = FL_FS * 0.5, max = w > 0 ? Math.max(1, Math.floor(w / cw)) : Infinity, out = [], cur = '';
@@ -660,11 +681,12 @@ function flagLines(s, w) {
   if (cur || !out.length) out.push(cur);
   return out;
 }
-function drawFlags(L) {
-  var g = document.getElementById('flags'); FLAG_BOXES = [];
+// avoid (optional): boxes to keep the labels off (the team markers, placed first)
+function drawFlags(L, avoid) {
+  var g = document.getElementById('flags'); FLAG_BOXES = []; avoid = avoid || [];
   if (!g) return;
   var F = Array.isArray(L.flags) ? L.flags : [];
-  if (!F.length) { g.innerHTML = ''; return; }
+  if (!F.length) { g.innerHTML = ''; if (window.__placeFlagTog) window.__placeFlagTog(); return; }
   // the building: the extent, or for a sheet kept as uploaded the desks' area plus the facade
   var E = L.extent, B = E.slice();
   if (L.asIs && L.desks && L.desks.length) {
@@ -672,52 +694,46 @@ function drawFlags(L) {
     L.desks.forEach(function (d) { bx[0] = Math.min(bx[0], d[0]); bx[1] = Math.min(bx[1], d[1]); bx[2] = Math.max(bx[2], d[2]); bx[3] = Math.max(bx[3], d[3]); });
     B = [Math.max(E[0], bx[0] - 150), Math.max(E[1], bx[1] - 150), Math.min(E[2], bx[2] + 150), Math.min(E[3], bx[3] + 150)];
   }
-  var GAP = 40, out = [];
+  var out = [], M = L.margin || 250, VB = [E[0] - M, E[1] - M, E[2] + M, E[3] + M];
   function ok(a) { return Array.isArray(a) && a.length >= 2 && isFinite(a[0]) && isFinite(a[1]); }
+  function onDesk(b) { return (L.desks || []).some(function (d) { return b.x0 < d[2] + 10 && b.x1 > d[0] - 10 && b.y0 < d[3] + 10 && b.y1 > d[1] - 10; }); }
+  function cross(x0, y0, x1, y1) {
+    var n = 0;
+    (L.desks || []).forEach(function (d) {
+      var t0 = 0, t1 = 1, dx = x1 - x0, dy = y1 - y0, P = [-dx, dx, -dy, dy], Q = [x0 - d[0] + 2, d[2] - 2 - x0, y0 - d[1] + 2, d[3] - 2 - y0];
+      for (var j = 0; j < 4; j++) { if (P[j] === 0) { if (Q[j] < 0) return; continue; } var r = Q[j] / P[j]; if (P[j] < 0) t0 = Math.max(t0, r); else t1 = Math.min(t1, r); if (t0 > t1) return; }
+      n++;
+    });
+    return n;
+  }
   function boxAt(px, py, tw, nl) { return { x0: px - 12, y0: py - FL_POLE - 12, x1: px + FL_PW + 16 + tw + 12, y1: Math.max(py, py - FL_POLE + FL_PH / 2 + (nl - 1) * FL_LH + FL_FS / 2) + 12 }; }
-  function hit(b) { return FLAG_BOXES.some(function (o) { return b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0; }); }
+  function hit(b) { return FLAG_BOXES.concat(avoid).some(function (o) { return b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0; }); }
   F.forEach(function (f, i) {
-    if (!f) return;
+    if (!f || (f.q === 'transparent' && !ASK_TRANSPARENT)) return;
     var isQ = f.q === 'transparent', OPW = 90, OPG = 24;
     var lab = isQ ? 'Seats  ' + (f.n || '') + ': ' + (f.text || 'Transparent?') : (f.n !== undefined && f.n !== null && f.n !== '' ? f.n + ' ' : '') + (f.text || '');
     var lines = flagLines(lab, +f.w || 0), tw = 0;
     lines.forEach(function (s) { tw = Math.max(tw, s.length * FL_FS * 0.5); });
     var tw0 = tw; if (isQ) tw += OPG + 2 * OPW + OPG;   // the y / n buttons after the text
     var bh = Math.max(FL_POLE, FL_PH / 2 + (lines.length - 1) * FL_LH + FL_FS / 2), bw = FL_PW + 16 + tw;
-    var at = ok(f.at) ? [+f.at[0], +f.at[1]] : null, px, py, side = 'N';
+    var at = ok(f.at) ? [+f.at[0], +f.at[1]] : null, px, py;
     if (ok(f.pos)) { px = +f.pos[0]; py = +f.pos[1]; }
     else {
-      var a = at || [B[0] + 60, B[1]];
-      // the pole foot right outside a facade, the label running away from the building. Of the four sides (and spots
-      // slid along each), the one whose red line to the flagged spot crosses the fewest desks, then the shortest line
-      // (24 Nov 2026: the line must not run over desks)
-      var foot = function (sd, k) {
-        if (sd === 'N') return [a[0] + k, B[1] - GAP - (bh - FL_POLE)];
-        if (sd === 'S') return [a[0] + k, B[3] + GAP + FL_POLE];
-        if (sd === 'W') return [B[0] - GAP - bw, a[1] + FL_POLE / 2 + k];
-        return [B[2] + GAP, a[1] + FL_POLE / 2 + k];
-      };
-      var cross = function (x0, y0, x1, y1) {
-        var n = 0;
-        (L.desks || []).forEach(function (d) {
-          var t0 = 0, t1 = 1, dx = x1 - x0, dy = y1 - y0, P = [-dx, dx, -dy, dy], Q = [x0 - d[0] + 2, d[2] - 2 - x0, y0 - d[1] + 2, d[3] - 2 - y0];
-          for (var j = 0; j < 4; j++) { if (P[j] === 0) { if (Q[j] < 0) return; continue; } var r = Q[j] / P[j]; if (P[j] < 0) t0 = Math.max(t0, r); else t1 = Math.min(t1, r); if (t0 > t1) return; }
-          n++;
-        });
-        return n;
-      };
-      var dN = a[1] - B[1], dS = B[3] - a[1], dW = a[0] - B[0], dE = B[2] - a[0], m = Math.min(dN, dS, dW, dE), best = null;
-      side = m === dN ? 'N' : m === dS ? 'S' : m === dW ? 'W' : 'E';
-      if (at) ['N', 'S', 'W', 'E'].forEach(function (sd) {
-        [0, -200, 200, -400, 400, -700, 700].forEach(function (k) {
-          var q = foot(sd, k), sc = cross(q[0], q[1], at[0], at[1]) * 1e7 + Math.sqrt(Math.pow(q[0] - at[0], 2) + Math.pow(q[1] - at[1], 2)) + Math.abs(k) * 0.5;
-          if (!best || sc < best.sc) best = { sc: sc, sd: sd, q: q };
-        });
-      });
-      if (best) { side = best.sd; px = best.q[0]; py = best.q[1]; } else { var q0 = foot(at ? side : 'N', 0); side = at ? side : 'N'; px = q0[0]; py = q0[1]; }
-      // keep clear of the flags placed before: slide along the facade
-      var guard = 0, horiz = side === 'N' || side === 'S';
-      while (guard++ < 40 && hit(boxAt(px, py, tw, lines.length))) { if (horiz) px += bw + 30; else py += bh + 30; }
+      // close to the flagged spot, in blank space inside the plan's view (the view never grows for a flag): of the spots
+      // around it, the one whose label covers no desk and no other flag, stays inside the view, and whose red line
+      // crosses the fewest desks, then the shortest line (set by the user 24 Nov 2026)
+      var a = at || [B[0] + 60, B[1] + FL_POLE + 60], best = null;
+      for (var r = at ? 90 : 0; r <= 2400 && !(best && best.sc < 1e6 && r > best.r + 400); r += 70) {
+        var nd = r ? Math.max(12, Math.round(r / 40)) : 1;
+        for (var k = 0; k < nd; k++) {
+          var t = 2 * Math.PI * k / nd, qx = a[0] + Math.cos(t) * r, qy = a[1] + Math.sin(t) * r, bx = boxAt(qx, qy, tw, lines.length);
+          if (bx.x0 < VB[0] || bx.y0 < VB[1] || bx.x1 > VB[2] || bx.y1 > VB[3] || hit(bx) || onDesk(bx)) continue;
+          var sc = (at ? cross(qx, qy, at[0], at[1]) * 1e6 : 0) + r;
+          if (!best || sc < best.sc) best = { sc: sc, x: qx, y: qy, r: r };
+        }
+      }
+      if (best) { px = best.x; py = best.y; }
+      else { px = Math.max(VB[0] + 12, Math.min(VB[2] - bw - 24, a[0])); py = Math.max(VB[1] + FL_POLE + 12, Math.min(VB[3] - 12, a[1])); }
     }
     var top = py - FL_POLE, h = [];
     if (at) h.push('<line class="fl-line" x1="' + f1(px) + '" y1="' + f1(py) + '" x2="' + f1(at[0]) + '" y2="' + f1(at[1]) + '"/>');
@@ -734,6 +750,8 @@ function drawFlags(L) {
     FLAG_BOXES.push(boxAt(px, py, tw, lines.length));
   });
   g.innerHTML = out.join('');
+  g.style.display = flagsShown() ? '' : 'none';
+  if (window.__placeFlagTog) window.__placeFlagTog();
   // keep #flags the last thing drawn, whatever was added to the plan after it
   if (g.parentNode && g.parentNode.lastElementChild !== g) g.parentNode.appendChild(g);
 }
@@ -1193,8 +1211,157 @@ function readDesks(lib, page) {
       if (!best || D.length > Math.max(best.D.length * 1.25, best.D.length + 2)) best = { D: D, ang: DA, f: f, n: c.n, sizes: c.sizes, angles: angles };
     });
     if (isFinite(box[0])) best.box = box.map(function (v) { return v * best.f; });
-    return best;
+    // then the chairs put the desks right (one desk per chair, centred on it)
+    return pdfInk(lib, page).then(function (ink) { return chairDesks(best, findChairs(ink.segs)); }, function () { return best; });
   });
+}
+// ---- Chairs mark desk centres (set by the user 24 Nov 2026): a top-view office chair sits centred on its desk's long
+// edge, so the desk's centre lies on the line from the chair perpendicular to that edge, and the number of chairs around
+// a bench is its number of desks. Chairs = small closed clusters of short strokes (curves, or curves cut into many short
+// lines), roughly square, all about one size; each chair's desk is read from the lines around it: the nearest edge in
+// front of the chair, the parallel edge one desk depth further, and the cross lines (desk ends) on both sides of it.
+// segs: pdfInk segments (page points). Returns [{ c: [cx, cy], s: size, d: [x0, y0, x1, y1] desk in page points or null }].
+function findChairs(segs) {
+  var sh = [], H = [], V = [];
+  segs.forEach(function (q) {
+    var dx = q[2] - q[0], dy = q[3] - q[1], L = Math.sqrt(dx * dx + dy * dy);
+    if (L < 0.05) return;
+    if (L < 8 && !q[7]) sh.push(q);
+    if (L >= 4) {
+      if (Math.abs(dy) < 0.15) H.push([Math.min(q[0], q[2]), Math.max(q[0], q[2]), (q[1] + q[3]) / 2]);
+      else if (Math.abs(dx) < 0.15) V.push([Math.min(q[1], q[3]), Math.max(q[1], q[3]), (q[0] + q[2]) / 2]);
+    }
+  });
+  // short strokes joined end to end = one drawn piece
+  var par = new Int32Array(sh.length), ends = new Map();
+  for (var i = 0; i < sh.length; i++) par[i] = i;
+  function root(i) { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; }
+  function key(x, y) { return Math.round(x * 4) * 1e6 + Math.round(y * 4); }
+  sh.forEach(function (q, i) {
+    [key(q[0], q[1]), key(q[2], q[3])].forEach(function (k) { var j = ends.get(k); if (j === undefined) ends.set(k, i); else { var a = root(i), b = root(j); if (a !== b) par[a] = b; } });
+  });
+  var comp = new Map();
+  sh.forEach(function (q, i) {
+    var r = root(i), c = comp.get(r);
+    if (!c) { c = { b: [Infinity, Infinity, -Infinity, -Infinity], n: 0, cv: 0, mx: 0, my: 0, w: 0 }; comp.set(r, c); }
+    var ln = Math.sqrt((q[2] - q[0]) * (q[2] - q[0]) + (q[3] - q[1]) * (q[3] - q[1])); c.mx += (q[0] + q[2]) / 2 * ln; c.my += (q[1] + q[3]) / 2 * ln; c.w += ln;
+    c.b[0] = Math.min(c.b[0], q[0], q[2]); c.b[1] = Math.min(c.b[1], q[1], q[3]); c.b[2] = Math.max(c.b[2], q[0], q[2]); c.b[3] = Math.max(c.b[3], q[1], q[3]);
+    c.n++; if (Math.abs(q[2] - q[0]) > 0.05 && Math.abs(q[3] - q[1]) > 0.05) c.cv++;
+  });
+  // pieces whose boxes overlap = one symbol (seat, back and arms of a chair)
+  var P = [], cb = {};
+  comp.forEach(function (c) { if (c.b[2] - c.b[0] < 70 && c.b[3] - c.b[1] < 70) P.push(c); });
+  var pp = P.map(function (_, i) { return i; });
+  function pr(i) { while (pp[i] !== i) { pp[i] = pp[pp[i]]; i = pp[i]; } return i; }
+  P.forEach(function (c, i) {
+    var gx0 = Math.floor(c.b[0] / 20), gx1 = Math.floor(c.b[2] / 20), gy0 = Math.floor(c.b[1] / 20), gy1 = Math.floor(c.b[3] / 20);
+    for (var gx = gx0; gx <= gx1; gx++) for (var gy = gy0; gy <= gy1; gy++) {
+      var k = gx + '|' + gy, l = cb[k] || (cb[k] = []);
+      l.forEach(function (j) { var o = P[j]; if (c.b[0] < o.b[2] + 0.3 && o.b[0] < c.b[2] + 0.3 && c.b[1] < o.b[3] + 0.3 && o.b[1] < c.b[3] + 0.3) { var a = pr(i), b = pr(j); if (a !== b) pp[a] = b; } });
+      l.push(i);
+    }
+  });
+  var G = {};
+  P.forEach(function (c, i) {
+    var r = pr(i), g = G[r] || (G[r] = { b: [Infinity, Infinity, -Infinity, -Infinity], n: 0, cv: 0, mx: 0, my: 0, w: 0 }); g.mx += c.mx; g.my += c.my; g.w += c.w;
+    g.b = [Math.min(g.b[0], c.b[0]), Math.min(g.b[1], c.b[1]), Math.max(g.b[2], c.b[2]), Math.max(g.b[3], c.b[3])]; g.n += c.n; g.cv += c.cv;
+  });
+  var cand = Object.keys(G).map(function (k) { return G[k]; }).filter(function (g) {
+    var w = g.b[2] - g.b[0], h = g.b[3] - g.b[1];
+    return g.n >= 10 && g.cv >= 6 && w >= 5 && h >= 5 && w <= 60 && h <= 60 && Math.max(w, h) / Math.min(w, h) <= 1.6;
+  });
+  // lines by position, for the desk edges
+  function idx(list) { var m = {}; list.forEach(function (l) { var k = Math.floor(l[2] / 4); (m[k] = m[k] || []).push(l); }); return m; }
+  var mH = idx(H), mV = idx(V);
+  function lines(m, a, b) { var out = []; for (var k = Math.floor(Math.min(a, b) / 4); k <= Math.floor(Math.max(a, b) / 4); k++) (m[k] || []).forEach(function (l) { if (l[2] >= Math.min(a, b) && l[2] <= Math.max(a, b)) out.push(l); }); return out; }
+  // the desk in front of a chair: dir 0..3 = +x, -x, +y, -y
+  function deskOf(cx, cy, s, dir) {
+    var hz = dir < 2, sg = dir % 2 ? -1 : 1, u = hz ? cx : cy, v = hz ? cy : cx, mE = hz ? mV : mH, mX = hz ? mH : mV;
+    var near = function (list, at) { var best = null; list.forEach(function (l) { if (!best || Math.abs(l[2] - at) < Math.abs(best[2] - at)) best = l; }); return best; };
+    var e1 = near(lines(mE, u + sg * 0.12 * s, u + sg * 1.1 * s).filter(function (l) { return l[0] <= v - 0.3 * s && l[1] >= v + 0.3 * s; }), u);
+    if (!e1) return null;
+    var e2 = near(lines(mE, e1[2] + sg * 0.9 * s, e1[2] + sg * 2.2 * s).filter(function (l) { return l[0] <= v - 0.3 * s && l[1] >= v + 0.3 * s; }), e1[2]);
+    if (!e2) return null;
+    var depth = Math.abs(e2[2] - e1[2]), lo = Math.min(e1[2], e2[2]), hi = Math.max(e1[2], e2[2]);
+    var cross = function (a, b) { return lines(mX, a, b).filter(function (l) { return l[0] <= lo + 0.15 * depth && l[1] >= hi - 0.15 * depth; }); };
+    // the desk ends: a cross line on each side, the same distance from the chair (a line inside the desk, e.g. a drawn
+    // middle line or a cable tray, is not an end when the chair says otherwise)
+    var ups = cross(v - 2.2 * s, v - 0.5 * s), dns = cross(v + 0.5 * s, v + 2.2 * s), half = 0, bestD = Infinity;
+    ups.forEach(function (p) { dns.forEach(function (q) {
+      var a = v - p[2], b = q[2] - v, dd = Math.abs(a - b);
+      if (dd <= 0.12 * (a + b) && (a + b) / depth >= 1.4 && (a + b) / depth <= 2.8 && dd + 0.02 * (a + b) < bestD) { bestD = dd + 0.02 * (a + b); half = (a + b) / 2; }
+    }); });
+    if (!half) return null;
+    var r = [lo, v - half, hi, v + half];
+    return { d: hz ? r : [r[1], r[0], r[3], r[2]], gap: Math.abs(e1[2] - u) };
+  }
+  function build(list) {
+    return list.map(function (g) {
+      // the backrest holds more ink than the front: a chair faces away from its ink's centre (a round stool faces nowhere)
+      var cx = (g.b[0] + g.b[2]) / 2, cy = (g.b[1] + g.b[3]) / 2, s = Math.max(g.b[2] - g.b[0], g.b[3] - g.b[1]);
+      var mx = g.mx / g.w - cx, my = g.my / g.w - cy, hz = Math.abs(mx) >= Math.abs(my), off = Math.max(Math.abs(mx), Math.abs(my));
+      if (off < 0.02 * s) return null;   // a chair pulled out at an angle still faces its desk's side
+      var dir = hz ? (mx < 0 ? 0 : 1) : (my < 0 ? 2 : 3), k = deskOf(cx, cy, s, dir);
+      return { c: [cx, cy], s: s, f: dir, d: k ? k.d : null };
+    }).filter(Boolean);
+  }
+  var first = build(cand), sz = first.filter(function (c) { return c.d; }).map(function (c) { return c.s; }).sort(function (a, b) { return a - b; });
+  if (sz.length < 4) return [];
+  // chairs are all about one size: symbols of another size (plants, lamps, letters) are left out
+  var med = sz[Math.floor(sz.length / 2)];
+  return first.filter(function (c) { return c.s >= 0.75 * med && c.s <= 1.35 * med; });
+}
+// the desks read from the lines (R from readDesks) put right by the chairs: a desk the chairs agree with stays; one they
+// disagree with (its centre off the chair, a middle line taken for an edge, a strip read as a desk) gives way to the desk
+// built on the chair. When most desks have chairs, a leftover box much smaller than a desk is not a desk. A plan read at
+// a wrong scale (desks far from 1–2.2 m long) is set to the scale the chairs' desks give (160 cm long).
+// Sets R.D, R.ang, R.f, R.n, R.box and R.chairs ([x, y] per desk in layout units, null = none found).
+function chairDesks(R, C) {
+  var K = 72 / 2.54 / 50, f0 = R.f, CD = [];
+  function area(r) { return (r[2] - r[0]) * (r[3] - r[1]); }
+  function ovl(a, b) { var w = Math.min(a[2], b[2]) - Math.max(a[0], b[0]), h = Math.min(a[3], b[3]) - Math.max(a[1], b[1]); return w > 0 && h > 0 ? w * h : 0; }
+  C.forEach(function (c) { if (c.d && !CD.some(function (o) { return ovl(o.d, c.d) > 0.5 * Math.min(area(o.d), area(c.d)); })) CD.push(c); });
+  R.chairs = null;
+  if (CD.length < 4) return R;
+  var longs = CD.map(function (c) { return Math.max(c.d[2] - c.d[0], c.d[3] - c.d[1]); }).sort(function (a, b) { return a - b; }), medL = longs[Math.floor(longs.length / 2)];
+  var areas = CD.map(function (c) { return area(c.d); }).sort(function (a, b) { return a - b; }), medA = areas[Math.floor(areas.length / 2)];
+  var cm = medL * f0 / K, f = cm < 100 || cm > 220 ? 160 * K / medL : f0, plan = CD.length >= 0.3 * R.D.length;
+  var used = CD.map(function () { return false; }), D = [], A = [], CH = [];
+  R.D.forEach(function (d, i) {
+    var o = d.map(function (v) { return v / f0; }), hit = [];
+    CD.forEach(function (c, k) { if (ovl(o, c.d) > 0.2 * Math.min(area(o), area(c.d))) hit.push(k); });
+    if (!hit.length) { if (!plan || area(o) >= 0.6 * medA) { D.push(o); A.push(R.ang[i] || 0); CH.push(null); } return; }
+    var c = CD[hit[0]].d, mn = Math.min(c[2] - c[0], c[3] - c[1]);
+    var agree = hit.length === 1 && Math.abs((o[0] + o[2]) / 2 - (c[0] + c[2]) / 2) < 0.2 * mn && Math.abs((o[1] + o[3]) / 2 - (c[1] + c[3]) / 2) < 0.2 * mn &&
+      [[o[2] - o[0], c[2] - c[0]], [o[3] - o[1], c[3] - c[1]]].every(function (p) { return p[0] / p[1] > 0.8 && p[0] / p[1] < 1.25; });
+    if (agree && !used[hit[0]]) { used[hit[0]] = true; D.push(o); A.push(R.ang[i] || 0); CH.push(CD[hit[0]].c); }
+  });
+  // desks centred on their chairs can leave a sliver between two desks of one bench (or overlap a little): they meet halfway
+  CD.forEach(function (a, i) { CD.forEach(function (b, j) {
+    if (j <= i || used[i] || used[j]) return;
+    var p = a.d, q = b.d, t = 0.15 * Math.min(p[2] - p[0], p[3] - p[1], q[2] - q[0], q[3] - q[1]);
+    [[0, 1], [1, 0]].forEach(function (ax) {
+      var u = ax[0], v = ax[1];   // v: the axis along which they follow each other, u: the one they share
+      if (Math.abs(p[u] - q[u]) > t || Math.abs(p[u + 2] - q[u + 2]) > t) return;
+      var lo = p[v] < q[v] ? p : q, hi = lo === p ? q : p, gap = hi[v] - lo[v + 2];
+      if (Math.abs(gap) < t && gap !== 0) { var m = (hi[v] + lo[v + 2]) / 2; lo[v + 2] = m; hi[v] = m; }
+    });
+  }); });
+  CD.forEach(function (c, k) { if (!used[k]) { D.push(c.d); A.push(0); CH.push(c.c); } });
+  // desks kept without a chair of their own: a chair right at one of their edges
+  D.forEach(function (d, i) {
+    if (CH[i] || A[i]) return;
+    C.forEach(function (c) {
+      if (CH[i]) return;
+      var gx = Math.max(d[0] - c.c[0], 0, c.c[0] - d[2]), gy = Math.max(d[1] - c.c[1], 0, c.c[1] - d[3]);
+      if ((gx > 0) !== (gy > 0) && Math.max(gx, gy) < 0.8 * c.s) CH[i] = c.c;
+    });
+  });
+  R.D = D.map(function (d) { return d.map(function (v) { return Math.round(v * f * 10) / 10; }); });
+  R.ang = A; R.chairs = CH.map(function (c) { return c ? [Math.round(c[0] * f * 10) / 10, Math.round(c[1] * f * 10) / 10] : null; });
+  if (R.box) R.box = R.box.map(function (v) { return v / f0 * f; });
+  R.f = f; R.n = Math.round(f * 50);
+  return R;
 }
 // ---- OSH = open space hidden (rules C2 23-25, set by the user 24 Nov 2026). An open-space seat is OSH when all hold:
 // (1) right behind its chair (40-200 cm) is something nobody sees through from a passage: a hatched wall (gypsum,
@@ -1204,7 +1371,9 @@ function readDesks(lib, page) {
 // corridor (a glass room front, a desk, or nothing within about 5 m). A thin plain line behind the chair (no hatch) may
 // be glass or opaque: those seats (with the rest of their bench row) are not decided but asked with a red flag
 // "Transparent? y / n" (L.flags, q: 'transparent'); n makes them OSH. Desks at any angle are read in their own frame.
-var OSH_V = 2, OSH_REV = 0;
+// ASK_TRANSPARENT: the "Transparent? y / n" question (C2 rule 24) is paused by the user (24 Nov 2026): a plain thin wall
+// behind the seats = OS, no question flag. OSH_V 3: stored layouts are read again once, which removes their question flags.
+var OSH_V = 3, OSH_REV = 0, ASK_TRANSPARENT = false;
 // every line and curve of the page (curves cut into 8 chords), in page points: [ax, ay, bx, by, curve, lineWidth, coloured, filled]
 // coloured = drawn in a colour (red / blue / green annotations, dimensions): left out of the reading
 function pdfInk(lib, page) {
@@ -1404,9 +1573,9 @@ function deskFrame(d, a, chair) {
   if (chair && ((chair[0] - c[0]) * nn[0] + (chair[1] - c[1]) * nn[1]) < 0) nn = [-nn[0], -nn[1]];
   return { c: c, u: u, n: nn, hl: hl, hd: hd };
 }
-function oshFeatures(desks, ang, G) {
+function oshFeatures(desks, ang, G, chairs) {
   ang = ang || [];
-  var C = G.C, cols = G.cols, rows = G.rows, CH = chairsFor(desks, ang), F = desks.map(function (d, i) { return deskFrame(d, ang[i], CH[i]); });
+  var C = G.C, cols = G.cols, rows = G.rows, CH = Array.isArray(chairs) && chairs.length === desks.length ? chairs : chairsFor(desks, ang), F = desks.map(function (d, i) { return deskFrame(d, ang[i], CH[i]); });
   // desk mask (desk index + 1), desks a little enlarged
   var dm = new Int32Array(cols * rows);
   F.forEach(function (f, i) {
@@ -1455,8 +1624,8 @@ function oshFeatures(desks, ang, G) {
   }
   return { F: F, CH: CH, bench: bench, bsize: bsize, cast: cast, dm: dm, cell: cell, setBench: function (b) { bench = b; } };
 }
-function oshDecide(desks, ang, G) {
-  var X = oshFeatures(desks, ang, G), F = X.F, U = 72 / 2.54 / 50, BACK = 240 * U, END = 520 * U, res = {};
+function oshDecide(desks, ang, G, chairs) {
+  var X = oshFeatures(desks, ang, G, chairs), F = X.F, U = 72 / 2.54 / 50, BACK = 240 * U, END = 520 * U, res = {};
   // benches again with a 6-unit gap (back-to-back desks are often drawn a panel apart)
   var par = desks.map(function (_, i) { return i; });
   function root(i) { while (par[i] !== i) i = par[i] = par[par[i]]; return i; }
@@ -1496,7 +1665,7 @@ function oshDecide(desks, ang, G) {
   var osh = [], ask = {};
   Object.keys(res).forEach(function (i) {
     var r = res[i];
-    if (rowThin[r.row]) (ask[r.row] = ask[r.row] || []).push(+i); else osh.push(+i + 1);
+    if (rowThin[r.row]) { if (ASK_TRANSPARENT) (ask[r.row] = ask[r.row] || []).push(+i); } else osh.push(+i + 1);
   });
   var q = Object.keys(ask).map(function (k) {
     var ids = ask[k].sort(function (a, b) { return a - b; }), x = 0, y = 0;
@@ -1506,14 +1675,15 @@ function oshDecide(desks, ang, G) {
   return { osh: osh.sort(function (a, b) { return a - b; }), ask: q };
 }
 // OSH seats of a layout from its PDF page: { osh: [seat numbers], ask: [{ seats, at }] } (f = layout units per page point)
-function oshFromPage(lib, page, f, desks, ang) {
+function oshFromPage(lib, page, f, desks, ang, chairs) {
   return pdfInk(lib, page).then(function (r) {
-    return oshDecide(desks, ang || [], oshGrid(r.segs, f || 1, r.w, r.h));
+    return oshDecide(desks, ang || [], oshGrid(r.segs, f || 1, r.w, r.h), chairs);
   });
 }
 // the questions as red flags on the plan; answers already given to the same seats are kept
 function oshFlags(old, ask) {
   var keep = (Array.isArray(old) ? old : []).filter(function (f) { return f && f.q !== 'transparent'; });
+  if (!ASK_TRANSPARENT) return keep;   // the question is paused: note flags only
   var prev = (Array.isArray(old) ? old : []).filter(function (f) { return f && f.q === 'transparent' && f.ans; });
   return keep.concat(ask.map(function (a) {
     var key = a.seats.join(','), was = prev.filter(function (f) { return (f.seats || []).join(',') === key; })[0];
@@ -1537,7 +1707,7 @@ function backfillOsh(db) {
     return loadPdf().then(function (l) { lib = l; return fetch(url); }).then(function (r) { if (!r.ok) throw { code: 'fetch' }; return r.arrayBuffer(); })
       .then(function (buf) { return lib.getDocument({ data: new Uint8Array(buf) }).promise; })
       .then(function (pdf) { return pdf.getPage(1); })
-      .then(function (pg) { return oshFromPage(lib, pg, LAYOUT.pscale || 1, LAYOUT.desks, LAYOUT.ang); })
+      .then(function (pg) { return oshFromPage(lib, pg, LAYOUT.pscale || 1, LAYOUT.desks, LAYOUT.ang, LAYOUT.chairs); })
       .then(function (res) {
         LAYOUT.osh = res.osh; LAYOUT.oshv = OSH_V; LAYOUT.flags = oshFlags(LAYOUT.flags, res.ask); OSH_REV++;
         drawFlags(LAYOUT);
@@ -1549,8 +1719,10 @@ function backfillOsh(db) {
 // Teams = groups of desks less than 110 pt (about 2 m) apart. Numbered top to bottom, then left to right;
 // seats inside a team top to bottom, then left to right.
 // ang (optional): each desk's angle in degrees (a desk turned around its centre); kept in L.ang, in seat order
-function buildLayout(D, name, box, ang) {
-  D = D.map(function (d, i) { return [d[0], d[1], d[2], d[3], (ang && ang[i]) || 0]; });
+// chairs (optional): each desk's chair [x, y] as read from the drawing (null = not found): kept in L.chairs in seat order,
+// the missing ones worked out by chairsFor
+function buildLayout(D, name, box, ang, chairs) {
+  D = D.map(function (d, i) { return [d[0], d[1], d[2], d[3], (ang && ang[i]) || 0, i]; });
   var par = D.map(function (_, i) { return i; });
   function f(i) { while (par[i] !== i) i = par[i] = par[par[i]]; return i; }
   for (var i = 0; i < D.length; i++) for (var j = 0; j < i; j++) {
@@ -1568,11 +1740,11 @@ function buildLayout(D, name, box, ang) {
   D.forEach(function (d) { E[0] = Math.min(E[0], d[0]); E[1] = Math.min(E[1], d[1]); E[2] = Math.max(E[2], d[2]); E[3] = Math.max(E[3], d[3]); });
   E = box ? [Math.floor(Math.min(E[0], box[0]) - 30), Math.floor(Math.min(E[1], box[1]) - 30), Math.ceil(Math.max(E[2], box[2]) + 30), Math.ceil(Math.max(E[3], box[3]) + 30)]
     : [Math.floor(E[0] - 150), Math.floor(E[1] - 150), Math.ceil(E[2] + 150), Math.ceil(E[3] + 150)];
-  var out = [], sides = {}, outAng = [];
+  var out = [], sides = {}, outAng = [], outIdx = [];
   G.forEach(function (g, ti) {
     var t = ti + 1;
     g.ds.sort(function (a, b) { return Math.round((a[1] + a[3]) / 60) - Math.round((b[1] + b[3]) / 60) || (a[0] - b[0]); });
-    g.ds.forEach(function (d) { out.push([d[0], d[1], d[2], d[3], 0]); outAng.push(d[4]); });   // no team until a program is uploaded or typed in
+    g.ds.forEach(function (d) { out.push([d[0], d[1], d[2], d[3], 0]); outAng.push(d[4]); outIdx.push(d[5]); });   // no team until a program is uploaded or typed in
     var b = [Infinity, Infinity, -Infinity, -Infinity];
     g.ds.forEach(function (d) { b[0] = Math.min(b[0], d[0]); b[1] = Math.min(b[1], d[1]); b[2] = Math.max(b[2], d[2]); b[3] = Math.max(b[3], d[3]); });
     sides[t] = sideOf(E, b, true);   // automatic layouts: every marker outside the building, on its nearest side
@@ -1580,6 +1752,10 @@ function buildLayout(D, name, box, ang) {
   var base = String(name || 'New floor').replace(/\.[^.]+$/, '');
   var L = { extent: E, margin: 250, desks: out, sides: sides, teams: G.length, heading: 'Layout · ' + base, desc: 'The ' + base + ' floor plan' };
   if (outAng.some(function (a) { return Math.abs(a) >= 0.5; })) L.ang = outAng;
+  if (chairs && chairs.some(Boolean)) {
+    var guess = chairsFor(out, L.ang);
+    L.chairs = outIdx.map(function (k, i) { return chairs[k] || guess[i] || null; });
+  }
   return L;
 }
 // the plan picture: the building area, grayscale, light greys to white, a few grey levels (small PNG)
@@ -1744,10 +1920,10 @@ window.__autoLayout = function (file, db, recId) {
       var D = R.D;
       if (D.length < 2) throw { code: 'nodesks' };
       // the uploaded drawing is kept as it is (whole page, its own colours, no outline or core drawn): only the desks are added
-      L = buildLayout(D, file.name, R.box, R.ang);
+      L = buildLayout(D, file.name, R.box, R.ang, R.chairs);
       L.pscale = R.f; L.scale = R.n; L.asIs = true;
       lnote('Found ' + D.length + ' desks. Drawing the plan…', true);
-      return oshFromPage(lib, page, R.f, L.desks, L.ang).then(function (res) { L.osh = res.osh; L.oshv = OSH_V; if (res.ask.length) L.flags = oshFlags([], res.ask); }, function () { L.osh = []; })
+      return oshFromPage(lib, page, R.f, L.desks, L.ang, L.chairs).then(function (res) { L.osh = res.osh; L.oshv = OSH_V; if (res.ask.length) L.flags = oshFlags([], res.ask); }, function () { L.osh = []; })
         .then(function () { return planPicture(page, L.extent, L.pscale, true); });
     })
     .then(function (png) { return window.claude.use('assets').then(function (a) { if (!a) throw { code: 'not_granted' }; return a.upload(png, { type: 'image/png' }); }); })
@@ -2313,7 +2489,7 @@ function MAIN() {
     if (oshKey !== key) {
       oshKey = key; oshSet = {};
       ((LAYOUT && LAYOUT.osh) || []).forEach(function (s) { oshSet[String(s)] = 1; });
-      ((LAYOUT && LAYOUT.flags) || []).forEach(function (f) { if (f && f.q === 'transparent' && f.ans === 'n') (f.seats || []).forEach(function (s) { oshSet[String(s)] = 1; }); });
+      ((LAYOUT && LAYOUT.flags) || []).forEach(function (f) { if (ASK_TRANSPARENT && f && f.q === 'transparent' && f.ans === 'n') (f.seats || []).forEach(function (s) { oshSet[String(s)] = 1; }); });
     }
     return !!oshSet[d.dataset.s];
   }
@@ -2335,6 +2511,26 @@ function MAIN() {
   flagsG.addEventListener('click', function (e) { var o = e.target.closest && e.target.closest('.fl-opt'); if (o) { e.stopPropagation(); answerFlag(o); } });
   flagsG.addEventListener('keydown', function (e) { var o = e.target.closest && e.target.closest('.fl-opt'); if (o && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); answerFlag(o); } });
   flagsG.addEventListener('pointerdown', function (e) { if (e.target.closest && e.target.closest('.fl-opt')) e.stopPropagation(); });
+  // Show / hide flags (set by the user 24 Nov 2026): only shown when the plan has flags; hiding them changes nothing else.
+  // On the website it sits left of the share button the site adds in the same corner (.eden-share, 44 px + 8 px gap).
+  var flagTog = document.getElementById('flagtog');
+  function placeFlagTog() {
+    var sec = flagTog.parentNode, w = document.getElementById('wrap'), sh = document.querySelector('.eden-share');
+    var has = !!document.querySelector('#flags .flag');
+    flagTog.hidden = !has; if (!has) return;
+    flagTog.style.top = (w.offsetTop + 12) + 'px';
+    flagTog.style.right = (sec.clientWidth - (w.offsetLeft + w.offsetWidth) + 12 + (sh && sh.offsetParent ? sh.offsetWidth + 8 : 0)) + 'px';
+    flagTog.setAttribute('aria-pressed', flagsShown() ? 'true' : 'false');
+  }
+  flagTog.addEventListener('click', function () {
+    var on = !flagsShown();
+    try { localStorage.setItem(flagsKey(), on ? 'on' : 'off'); } catch (e) {}
+    flagsG.style.display = on ? '' : 'none'; placeFlagTog();
+  });
+  window.__placeFlagTog = placeFlagTog;
+  addEventListener('resize', placeFlagTog);
+  if (window.ResizeObserver) new ResizeObserver(placeFlagTog).observe(document.getElementById('wrap'));
+  [0, 1000, 3000].forEach(function (ms) { setTimeout(placeFlagTog, ms); });
   // remember who sits at a single desk now (people with a program type keep it); returns undo entries
   function captureKinds(teams) {
     var stp = [];
@@ -2416,11 +2612,7 @@ function MAIN() {
     pk.forEach(function (el) { el.style.display = 'none'; });
     try { b = document.getElementById('teams').getBBox(); } catch (e) {}
     pk.forEach(function (el) { el.style.display = ''; });
-    // red flags placed in the margin stay in view too
-    try {
-      var fb = document.getElementById('flags').getBBox();
-      if (fb && fb.width) b = b && b.width ? (function () { var x0 = Math.min(b.x, fb.x), y0 = Math.min(b.y, fb.y); return { x: x0, y: y0, width: Math.max(b.x + b.width, fb.x + fb.width) - x0, height: Math.max(b.y + b.height, fb.y + fb.height) - y0 }; })() : fb;
-    } catch (e) {}
+    // red flags never change the view: they are placed inside it (set by the user 24 Nov 2026)
     var v = VB0.slice();
     if (b && b.width) {
       var x0 = Math.min(v[0], b.x - 30), y0 = Math.min(v[1], b.y - 30), x1 = Math.max(v[0] + v[2], b.x + b.width + 30), y1 = Math.max(v[1] + v[3], b.y + b.height + 30);
@@ -2646,8 +2838,8 @@ function MAIN() {
       if (!side) side = b.x < EXT[0] ? 'W' : b.x > EXT[2] ? 'E' : b.y < EXT[1] ? 'N' : b.y > EXT[3] ? 'S' : 'I';
       list.push({ g: g, side: side, lead: document.querySelector('#teams .lead[data-t="' + g.dataset.t + '"]') });
     });
-    // red flag labels are taken space: markers move off them like off another marker
-    var done = FLAG_BOXES.slice();
+    // red flags are placed after the markers and keep off them (so flags never move markers or the view)
+    var done = [];
     if (dragT) { var dg = document.querySelector('#teams .team[data-t="' + dragT + '"]'), db0 = dg && svgBox(dg); if (db0) done.push(db0); }
     list.forEach(function (m) {
       var dir = { N: [0, -1], S: [0, 1], W: [-1, 0], E: [1, 0], I: [0, 1] }[m.side] || [0, 1];
@@ -2746,7 +2938,6 @@ function MAIN() {
       var x1 = +l.getAttribute('x1'), y1 = +l.getAttribute('y1'), x2 = +l.getAttribute('x2'), y2 = +l.getAttribute('y2');
       mark(Math.min(x1, x2) - 16, Math.min(y1, y2) - 16, Math.max(x1, x2) + 16, Math.max(y1, y2) + 16);
     });
-    FLAG_BOXES.forEach(function (f) { mark(f.x0 - MARK_GAP, f.y0 - MARK_GAP, f.x1 + MARK_GAP, f.y1 + MARK_GAP); });
     // one grid cell = the widest / tallest parked marker plus a gap; all markers centred in their cells
     var rx0 = Infinity, ry0 = Infinity, rx1 = -Infinity, ry1 = -Infinity;
     items.forEach(function (it) { rx0 = Math.min(rx0, it.r.x0); ry0 = Math.min(ry0, it.r.y0); rx1 = Math.max(rx1, it.r.x1); ry1 = Math.max(ry1, it.r.y1); });
@@ -2955,6 +3146,12 @@ function MAIN() {
     spreadMarkers();
     clearMarkers();
     parkMarkers();
+    // red flags last, off every marker
+    if (LAYOUT && Array.isArray(LAYOUT.flags) && LAYOUT.flags.length) {
+      var avoid = [];
+      document.querySelectorAll('#teams .team').forEach(function (g) { if (g.style.display === 'none') return; var bx = svgBox(g); if (bx) avoid.push({ x0: bx.x0 - MARK_GAP, y0: bx.y0 - MARK_GAP, x1: bx.x1 + MARK_GAP, y1: bx.y1 + MARK_GAP }); });
+      drawFlags(LAYOUT, avoid);
+    }
     fitView();
     paintShade();
     // a selected person (orange row) and a selected desk follow the person to their desk now
@@ -4116,7 +4313,8 @@ function MAIN() {
     progNote('Reading ' + tabs.length + ' tabs into milestones…');
     tabs.forEach(function (tab, i) {
       p = p.then(function () { return new Promise(function (ok) { msShow(ids[i], ok); }); }).then(function () {
-        if (sheet) map[ids[i]] = syncProgram(tab.res, tab.name, '', { prev: prevTabs[ids[i]] || [] });
+        // a sheet linked before it was read by tabs (no tabs map yet): the teams it made are this tab's to update or remove
+        if (sheet) map[ids[i]] = syncProgram(tab.res, tab.name, '', { prev: prevTabs[ids[i]] || (sm && !sm.tabs ? sm.teams || [] : []) });
         else addProgram(tab.res, fname, '');
       });
     });
