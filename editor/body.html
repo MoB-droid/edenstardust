@@ -1,0 +1,70 @@
+<main>
+  <section class="stack">
+    <div class="bar brand">
+      <img class="logo" src="logo.png" alt="">
+      <h2 id="ltitle" class="ltitle" data-def="Layout · New floor" title="Click to rename" role="button" tabindex="0">Layout · New floor</h2>
+    </div>
+    <button type="button" id="flagtog" class="flagtog tip" data-tip="Show / hide flags" title="Show / hide flags" aria-label="Show / hide flags" aria-pressed="true" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 21V4"/><path class="pen" d="M6 4h11l-3 4 3 4H6z"/><path class="slash" d="M3 3l18 18"/></svg></button>
+    <div class="planwrap" id="wrap">
+      <svg id="plan" data-ext="0 0 2400 1700" viewBox="-250 -250 2900 2200" role="img" aria-labelledby="pt pd">
+        <title id="pt">Seat Plan</title>
+        <desc id="pd"></desc>
+        <g id="bgwrap"></g>
+        <g id="desks"></g>
+        <g id="elhi"></g>
+        <g id="teams"></g>
+        <g id="flags"></g>
+      </svg>
+    </div>
+  </section>
+  <section class="stack">
+    <div class="totrow">
+  <h2 class="tot"><span class="ti">Total seats: <span id="tottot">0</span><span class="sep">·</span></span><span class="ti">Used: <span id="totused">0</span><span class="sep">·</span></span><span class="ti">Available: <span id="totfree">0</span></span></h2>
+    </div>
+    <div class="tline" id="tline" hidden aria-label="Milestones"></div>
+    <div class="ctrls">
+      <div class="ctrl-left">
+        <div class="cgroup viewgrp">
+          <span class="cglabel" id="viewlbl">View</span>
+          <div class="zoom" role="group" aria-labelledby="viewlbl">
+            <button type="button" id="z1" data-z="1" aria-pressed="true">Fit</button>
+            <button type="button" id="z2" data-z="2" aria-pressed="false">2×</button>
+            <button type="button" id="z3" data-z="3.2" aria-pressed="false">3×</button>
+          </div>
+        </div>
+        <div class="cgroup actgrp">
+          <button type="button" id="suggest" class="undo big" aria-label="Suggest a seating">Suggest</button>
+          <button type="button" id="undo" class="undo big tip" data-tip="undo last change" disabled aria-label="Undo last change"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+          <button type="button" id="exp-xlsx" class="undo rsh2 tip" data-tip="send the layout picture and the program again to the same place" aria-label="Resend the layout and the program">Resend<span class="dest" id="dest-program" role="img"></span></button>
+          <span class="sheetwrap"><button type="button" id="chg-program" class="undo chg2 tip" data-tip="choose where to send the layout picture and the program, then send them" aria-label="Choose where to send the layout and the program"><svg class="shareic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M8 10H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-2"/></svg></button></span>
+        </div>
+      </div>
+      <div class="summ" id="summ"></div>
+      <div class="ctrl-right">
+        <div class="cgroup rgrp">
+        <div class="btnrow"><button type="button" id="uplayout" class="undo tip span3" data-tip="update or replace the floor plan (PDF or image)" aria-label="Upload layout">Upload<br>layout</button></div>
+        <input type="file" id="layfile" accept=".pdf,.png,.jpg,.jpeg" hidden>
+        <div class="btnrow" hidden><span class="sheetwrap"><button type="button" id="chg-layout" class="undo chg tip" data-tip="choose where to send the layout picture, then send it" aria-label="Share the layout">Share<svg class="shareic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M8 10H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-2"/></svg></button></span><button type="button" id="exp-png" class="undo rsh tip" data-tip="send the layout picture again to the same place" aria-label="Reshare the layout">Reshare<span class="dest" id="dest-layout" role="img"></span></button></div>
+        <div class="btnrow trio"><button type="button" id="upload" class="undo tip" data-tip="add teams from an Excel or CSV file (Claude reads it)" aria-label="Upload program">Upload<br>program</button><span class="sheetwrap"><button type="button" id="sheet" class="undo tip" data-tip="take the program from a Google Sheet (it stays linked)" aria-label="Link a Google Sheet">Link<br>sheet</button></span><button type="button" id="sheet-up" class="undo tip" data-tip="update the program from the linked Google Sheet" aria-label="Update from the Google Sheet" disabled>Update<br>sheet</button></div>
+        <input type="file" id="upfile" accept=".csv,.xlsx,.xls,.txt" hidden>
+        </div>
+</div>
+      </div>
+    </div>
+    <div class="msgbar" role="status" aria-live="polite">
+      <p class="saveerr" id="laymsg" hidden></p>
+      <p class="saveerr" id="shortmsg" hidden></p>
+      <p class="saveerr" id="saveerr" hidden></p>
+      <p class="saveerr messy" id="messymsg" hidden>Your table is messy. I can't understand the information in it. Please use my format. <button type="button" class="undo dlfmt" id="dlfmt">Download format</button></p>
+    </div>
+    <div class="anwrap" id="anwrap" hidden>
+      <button type="button" class="fold antitle" id="antitle" aria-expanded="false" aria-controls="antbl"><span class="car" aria-hidden="true"></span><span>ANALYSIS</span></button>
+      <div class="tablewrap anbox" id="antbl" hidden></div>
+    </div>
+    <div class="totrow tabletitle"><h2>PROGRAM</h2></div>
+    <p class="prognote" id="prognote" hidden></p>
+    <div class="tablewrap"><table class="seats" id="srows">
+      <thead><tr><th class="num" aria-label="Open"></th><th>Name</th><th class="num">Seat</th><th class="num">Type</th><th class="del"><span class="acts"><button type="button" id="addteam" class="undo tip" data-tip="add team" aria-label="Add team">+</button><span class="delwrap"><button type="button" id="delprog" class="delbtn tip" data-tip="delete the whole program" aria-label="Delete all">Delete all</button></span></span></th></tr></thead>
+    </table></div>
+  </section>
+</main>
