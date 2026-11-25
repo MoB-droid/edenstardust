@@ -4331,7 +4331,9 @@ function MAIN() {
         else addProgram(tab.res, fname, '');
       });
     });
-    return p.then(function () { return new Promise(function (ok) { if (MS.active === back) ok(); else msShow(back, ok); }); }).then(function () {
+    // every tab's whole program is saved before the load is called done (on the website the saves are queued)
+    return p.then(function () { if (!window.__edenFlush) return; progNote('Saving ' + tabs.length + ' milestones…'); return window.__edenFlush(); })
+      .then(function () { return new Promise(function (ok) { if (MS.active === back) ok(); else msShow(back, ok); }); }).then(function () {
       msSave().catch(function () {});
       if (sm) saveSheetMeta({ id: sm.id, name: sm.name, url: sm.url || '', teams: [], tabs: map, at: new Date().toISOString() });
       progNote(tabs.length + ' tabs → ' + tabs.length + ' milestones: ' + tabs.map(function (t) { return t.name; }).join(', ') + ' · from ' + fname + '.');

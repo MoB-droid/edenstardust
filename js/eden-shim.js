@@ -66,6 +66,56 @@
     touchPlan();
   }
 
+  // Writes go through one queue (24 Nov 2026): a sheet with several tabs makes over a thousand writes at once, and
+  // sent one request each the browser dropped the last ones (a milestone got 4 of its 6 teams). Writes made in the same
+  // moment are merged per document (the last one wins) and sent as a few bulk requests, one batch at a time, retried.
+  var pend = new Map(), flushing = null, flushTimer = null;
+  function queue(c, id, data) {
+    var k = c + '\u0000' + id, old = pend.get(k), w = { c: c, id: id, data: data, waiters: old ? old.waiters : [] };
+    pend.set(k, w);
+    var p = new Promise(function (ok, bad) { w.waiters.push([ok, bad]); });
+    if (!flushTimer) flushTimer = setTimeout(flush, 30);
+    return p;
+  }
+  function send(fn, tries) {
+    return fn().then(function (r) { if (r && r.error) throw r.error; return r; }).catch(function (e) {
+      if (tries <= 1) throw e;
+      return new Promise(function (ok) { setTimeout(ok, 800 * (5 - tries)); }).then(function () { return send(fn, tries - 1); });
+    });
+  }
+  function flush() {
+    flushTimer = null;
+    if (flushing) { flushing.then(function () { if (pend.size && !flushTimer) flushTimer = setTimeout(flush, 0); }); return; }
+    var batch = Array.from(pend.values()); pend.clear();
+    if (!batch.length) return;
+    var now = new Date().toISOString(), ups = batch.filter(function (w) { return w.data !== null; }), dels = batch.filter(function (w) { return w.data === null; });
+    var jobs = [];
+    for (var i = 0; i < ups.length; i += 400) (function (part) {
+      jobs.push({ ws: part, fn: function () { return sb.from('plan_docs').upsert(part.map(function (w) { return { plan_id: planId, col: w.c, doc_id: w.id, data: w.data, updated_at: now }; })); } });
+    })(ups.slice(i, i + 400));
+    var byCol = {}; dels.forEach(function (w) { (byCol[w.c] = byCol[w.c] || []).push(w); });
+    Object.keys(byCol).forEach(function (c) {
+      for (var i = 0; i < byCol[c].length; i += 200) (function (part) {
+        jobs.push({ ws: part, fn: function () { return sb.from('plan_docs').delete().eq('plan_id', planId).eq('col', c).in('doc_id', part.map(function (w) { return w.id; })); } });
+      })(byCol[c].slice(i, i + 200));
+    });
+    flushing = jobs.reduce(function (p, j) {
+      return p.then(function () {
+        return send(j.fn, 4).then(function () {
+          j.ws.forEach(function (w) { w.waiters.forEach(function (f) { f[0](); }); });
+        }, function (e) {
+          console.error('EdenStardust: save failed', e);
+          j.ws.forEach(function (w) { w.waiters.forEach(function (f) { f[1]({ code: 'save_failed', message: e && e.message }); }); });
+        });
+      });
+    }, Promise.resolve()).then(function () { flushing = null; if (pend.size && !flushTimer) flushTimer = setTimeout(flush, 0); });
+  }
+  // the editor waits for this before saying a long load is done; leaving the page while writes are pending asks first
+  window.__edenFlush = function () {
+    return new Promise(function (ok) { (function chk() { if (!pend.size && !flushing && !flushTimer) ok(); else setTimeout(chk, 100); })(); });
+  };
+  addEventListener('beforeunload', function (e) { if (pend.size || flushing) { e.preventDefault(); e.returnValue = ''; } });
+
   function docRef(c, id) {
     return {
       id: id,
@@ -73,22 +123,19 @@
       set: function (data) {
         return ready.then(function () {
           colOf(c)[id] = clone(data) || {}; notify(c, id);
-          return sb.from('plan_docs').upsert({ plan_id: planId, col: c, doc_id: id, data: colOf(c)[id], updated_at: new Date().toISOString() })
-            .then(function (r) { if (r.error) return fail(r.error); return afterWrite(c, id); });
+          return queue(c, id, clone(colOf(c)[id])).then(function () { return afterWrite(c, id); });
         });
       },
       update: function (part) {
         return ready.then(function () {
           colOf(c)[id] = Object.assign({}, colOf(c)[id] || {}, clone(part)); notify(c, id);
-          return sb.from('plan_docs').upsert({ plan_id: planId, col: c, doc_id: id, data: colOf(c)[id], updated_at: new Date().toISOString() })
-            .then(function (r) { if (r.error) return fail(r.error); return afterWrite(c, id); });
+          return queue(c, id, clone(colOf(c)[id])).then(function () { return afterWrite(c, id); });
         });
       },
       delete: function () {
         return ready.then(function () {
           delete colOf(c)[id]; notify(c, id);
-          return sb.from('plan_docs').delete().eq('plan_id', planId).eq('col', c).eq('doc_id', id)
-            .then(function (r) { if (r.error) return fail(r.error); return afterWrite(c, id); });
+          return queue(c, id, null).then(function () { return afterWrite(c, id); });
         });
       },
       onSnapshot: function (fn, err) {
@@ -149,9 +196,18 @@
   }).then(function (r) {
     if (r.error || !r.data) { home(); throw { code: 'not_found' }; }
     planRow = r.data;
-    return sb.from('plan_docs').select('col, doc_id, data').eq('plan_id', planId).range(0, 9999);
+    // every document of the plan, 1000 at a time (the server returns at most 1000 rows per request; plans with
+    // several milestones have more)
+    var all = [];
+    function page(from) {
+      return sb.from('plan_docs').select('col, doc_id, data').eq('plan_id', planId).order('col').order('doc_id').range(from, from + 999).then(function (r) {
+        if (r.error) throw { code: 'load_failed', message: r.error.message };
+        all = all.concat(r.data || []);
+        return (r.data || []).length === 1000 ? page(from + 1000) : { data: all };
+      });
+    }
+    return page(0);
   }).then(function (r) {
-    if (r.error) throw { code: 'load_failed', message: r.error.message };
     (r.data || []).forEach(function (row) { colOf(row.col)[row.doc_id] = row.data; });
     // repair the dashboard row if an earlier save was cut short
     var want = rowFromCache();
