@@ -72,7 +72,6 @@ def build_plan():
     s = swap(s, 'Ask Claude to “process the new layout”.', 'Try a vector PDF of the floor plan.', 3)
     s = swap(s, 'upload the plan as a PDF, or ask Claude to “process the new layout”.', 'upload the plan as a PDF.')
     s = swap(s, 'add teams from an Excel or CSV file (Claude reads it)', 'add teams from an Excel or CSV file')
-    s = swap(s, "progNote('Reading ' + fname + ' with Claude…');", "progNote('Reading ' + fname + '…');")
     (ROOT / 'plan.html').write_text(s, encoding='utf-8')
 
 

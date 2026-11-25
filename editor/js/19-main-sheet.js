@@ -102,16 +102,6 @@
   // that milestone is opened, its program is brought in line with the tab (sheet) or added (Excel upload) and Suggest
   // seats it, the others stay untouched; then the milestone shown before opens again. Empty or note tabs are skipped,
   // an HR seating file keeps its own rules, a single program tab works as before (the milestone shown).
-  function programTabs(sheets) {
-    if (!MS.db || !MS.wrapped || hrRead(sheets)) return null;
-    var tabs = [];
-    sheets.forEach(function (sh) {
-      if (filled(sh.rows || []).length < 2) return;
-      var res = columnRead([sh]);
-      if (res && !isMessy(res, [sh])) tabs.push({ name: String(sh.name || '').trim() || 'Tab ' + (tabs.length + 1), res: res });
-    });
-    return tabs.length >= 2 ? tabs : null;
-  }
   var tabsBusy = false;
   function loadTabs(tabs, fname, sheet) {
     if (tabsBusy) return Promise.resolve();
@@ -139,16 +129,18 @@
   }
   window.__loadTabs = function (sheets, name, sheet) {   // for tests: the same as a linked sheet (sheet true) or an Excel upload
     if (sheet && !sheetMeta) saveSheetMeta({ id: 'test', name: name, teams: [] });
-    var tabs = programTabs(sheets); return tabs ? loadTabs(tabs, name, sheet) : Promise.resolve('single');
+    return askProgram(name, sheets).then(function (a) { return a && a.tabs ? loadTabs(a.tabs, name, sheet) : 'single'; });
   };
   function updateFromSheet() {
     if (!sheetMeta || !sheetMeta.id) return;
     progNote('Reading ' + sheetMeta.name + ' from Google…');
     return googleReady().then(googleToken).then(function () { return sheetTables(sheetMeta.id); }).then(function (tb) {
       sheetMeta.name = tb.title;
-      var tabs = programTabs(tb.sheets);
-      if (tabs) return loadTabs(tabs, tb.title, true);
-      return readProgram(tb.title, tb.sheets).then(function (res) { if (res) syncProgram(res, tb.title, res.how); });
+      return askProgram(tb.title, tb.sheets).then(function (a) {
+        if (!a) return;
+        if (a.tabs) return loadTabs(a.tabs, tb.title, true);
+        syncProgram(a.res, tb.title, a.res.how);
+      });
     }).catch(sheetError);
   }
   function pickSheet() {
