@@ -125,6 +125,7 @@
         // a sheet linked before it was read by tabs (no tabs map yet): the teams it made are this tab's to update or remove
         if (sheet) map[ids[i]] = syncProgram(tab.res, tab.name, '', { prev: prevTabs[ids[i]] || (sm && !sm.tabs ? sm.teams || [] : []) });
         else addProgram(tab.res, fname, '');
+        return suggestDone;   // the tab's teams are seated before the next milestone opens
       });
     });
     // every tab's whole program is saved before the load is called done (on the website the saves are queued)

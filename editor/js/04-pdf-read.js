@@ -207,11 +207,11 @@ function pageRaw(lib, page, want) {
   return Promise.all(jobs).then(function () { return out; });
 }
 // Ask the brain: op = 'layout' | 'desks' | 'osh' | 'elements' | …; raw = a raw reading (its numbers are sent rounded
-// to 0.01 pt), more = small exact values (desks, scale, names). Resolves with the answer; rejects with { code: 'nobrain' }
+// to 0.001 pt), more = small exact values (desks, scale, names). Resolves with the answer; rejects with { code: 'nobrain' }
 // where there is no server (the preview artifact) or { code: 'brain', status } when the server fails.
 function brain(op, raw, more) {
   if (!window.__edenBrain) return Promise.reject({ code: 'nobrain' });
-  var body = '{"raw":' + JSON.stringify(raw || {}, function (k, v) { return typeof v === 'number' ? Math.round(v * 100) / 100 : v; }) + ',"more":' + JSON.stringify(more || {}) + '}';
+  var body = '{"raw":' + JSON.stringify(raw || {}, function (k, v) { return typeof v === 'number' ? Math.round(v * 1000) / 1000 : v; }) + ',"more":' + JSON.stringify(more || {}) + '}';
   return window.__edenBrain(op, body);
 }
 // a new layout from a raw reading: one trip, or three smaller ones when the drawing is too heavy for one
