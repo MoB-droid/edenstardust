@@ -141,17 +141,16 @@ window.__autoLayout = function (file, db, recId) {
   loadPdf().then(function (l) { lib = l; return file.arrayBuffer(); })
     .then(function (buf) { return lib.getDocument({ data: new Uint8Array(buf) }).promise; })
     .then(function (pdf) { return pdf.getPage(1); })
-    .then(function (p) { page = p; return readDesks(lib, page); })
-    .then(function (R) {
-      var D = R.D;
-      if (D.length < 2) throw { code: 'nodesks' };
+    .then(function (p) { page = p; return pageRaw(lib, page, { A: 1, texts: 1, ink: 1, el: 1 }); })
+    .then(function (raw) { lnote('Analyzing ' + file.name + '… finding the desks', true); return readLayout(raw, file.name); })
+    .then(function (res) {
+      if (!res || res.error || !res.L) throw { code: (res && res.error) || 'brain' };
       // the uploaded drawing is kept as it is (whole page, its own colours, no outline or core drawn): only the desks are added
-      L = buildLayout(D, file.name, R.box, R.ang, R.chairs);
-      L.pscale = R.f; L.scale = R.n; L.asIs = true;
-      lnote('Found ' + D.length + ' desks. Drawing the plan…', true);
-      return oshFromPage(lib, page, R.f, L.desks, L.ang, L.chairs).then(function (res) { L.osh = res.osh; L.oshv = OSH_V; if (res.ask.length) L.flags = oshFlags([], res.ask); }, function () { L.osh = []; })
-        .then(function () { lnote('Found ' + D.length + ' desks. Listing the elements (C3)…', true); return elOfPage(lib, page, L, R.f).then(function (E) { L.elements = E; L.elv = EL_V; }, function () {}); })
-        .then(function () { return planPicture(page, L.extent, L.pscale, true); });
+      L = res.L;
+      var ask = L.ask || []; delete L.ask;
+      if (ask.length) L.flags = oshFlags([], ask);
+      lnote('Found ' + L.desks.length + ' desks. Drawing the plan…', true);
+      return planPicture(page, L.extent, L.pscale, true);
     })
     .then(function (png) { return window.claude.use('assets').then(function (a) { if (!a) throw { code: 'not_granted' }; return a.upload(png, { type: 'image/png' }); }); })
     .then(function (up) {
@@ -169,7 +168,8 @@ window.__autoLayout = function (file, db, recId) {
       ANALYZING = false;
       var c = e && e.code;
       if (recId) db.collection('layouts').doc(recId).update({ status: 'waiting for Claude' }).catch(function () {});
-      lnote(c === 'nodesks' ? 'No desks could be found in ' + file.name + '. Ask Claude to “process the new layout”.'
+      lnote(c === 'nobrain' ? 'Reading a layout works on edenstardust.com (this page is a preview).'
+        : c === 'nodesks' ? 'No desks could be found in ' + file.name + '. Ask Claude to “process the new layout”.'
         : c === 'not_granted' ? 'Saving the plan needs edit access to this page.'
         : c === 'load' ? 'The PDF reader could not load. Check the connection and upload again.'
         : 'The layout could not be analyzed automatically. Ask Claude to “process the new layout”.');

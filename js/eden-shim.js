@@ -228,6 +228,26 @@
   });
   ready.catch(function (e) { console.error('EdenStardust: could not load the plan', e); });
 
+  // The brain: the server works out what a drawing means (desks, seat types, elements), seats teams and reads program
+  // tables. The page sends what it read and gets the answer; the rules never reach the browser. Signed-in users only.
+  // The master can try the next rules first: localStorage 'eden:brain' = 'dev' asks the brain-dev copy.
+  window.__edenBrain = function (op, body) {
+    var slug = 'brain';
+    try { if (localStorage.getItem('eden:brain') === 'dev') slug = 'brain-dev'; } catch (e) {}
+    return sb.auth.getSession().then(function (r) {
+      var tok = r && r.data && r.data.session && r.data.session.access_token;
+      if (!tok) throw { code: 'brain', status: 401 };
+      var head = { Authorization: 'Bearer ' + tok, apikey: SUPABASE_KEY, 'x-op': op, 'Content-Type': 'application/octet-stream' };
+      var zip = typeof CompressionStream === 'function' && body.length > 20000
+        ? new Response(new Blob([body]).stream().pipeThrough(new CompressionStream('gzip'))).blob().then(function (b) { head['x-enc'] = 'gzip'; return b; })
+        : Promise.resolve(body);
+      return zip.then(function (data) { return fetch(SUPABASE_URL + '/functions/v1/' + slug, { method: 'POST', headers: head, body: data }); });
+    }).then(function (res) {
+      if (!res.ok) throw { code: 'brain', status: res.status };
+      return res.json();
+    }, function (e) { throw (e && e.code) ? e : { code: 'brain', status: 0 }; });
+  };
+
   window.claude = {
     use: function (name) {
       if (name === 'db') return ready.then(function () { return dbApi; });

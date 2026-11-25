@@ -113,7 +113,8 @@ def write_map():
         '# Editor map\n\n'
         'Built by `build.py` on every build: do not edit by hand. Read this first, then open only the part you need.\n\n'
         '- The parts are joined in this order into one page (`plan.html` on the site, the Seat Plan artifact as preview).\n'
-        '- Parts 01 to 09 are complete on their own (plan reading: desks, chairs, OSH, elements). The tests load them.\n'
+        '- Parts 01 to 09 are complete on their own (drawing the plan, flags, milestones, reading a PDF page).\n'
+        '- The rules are not in this repo: the page asks the server (`brain(op, …)` in `js/04-pdf-read.js`).\n'
         '- Parts 10 to 20 (`*-main-*`) are pieces of the one `MAIN` function (the page\'s behaviour): they share its variables.\n\n'
         '| # | Part | Lines | Holds | Functions |\n|---|------|-------|-------|-----------|\n' + '\n'.join(rows) + '\n'
     )

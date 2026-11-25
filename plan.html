@@ -1007,7 +1007,9 @@ function START() {
   pickLayout().then(function (L) { if (L) renderLayout(L); return msLoad(); }).then(function () { MAIN(); watchPlan(); msRender(); });
 }
 
-// ---- Automatic analysis of an uploaded PDF: read its drawing lines, find the desks, group them into teams.
+// ---- Reading an uploaded PDF. This page only reads what is drawn (lines, curves, fills, text) and draws the plan
+// picture. What the drawing means (desks, seat types, elements) is worked out by the server ("the brain"): the page
+// sends it the raw reading and gets the answer back. See pageRaw and brain below.
 var PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
 function loadScript(src) { return new Promise(function (ok, bad) { var s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = function () { bad({ code: 'load' }); }; document.head.appendChild(s); }); }
 function loadPdf() {
@@ -1052,369 +1054,6 @@ function pdfSegments(lib, page, vp, lo, hi) {
     return { H: H, V: V, A: A };
   });
 }
-// Desks = two parallel, equal, aligned edges a desk-size apart (desks 160×70, 140×70, 160×80 cm at 1:50;
-// square or rounded corners). Candidates that overlap each other are not desks (lounge seats, tables) and are dropped.
-function findDesks(S, sizes) {
-  var K = 72 / 2.54 / 50, R = [];
-  function uniq(list) { var seen = {}, out = []; list.forEach(function (s) { var k = s.map(function (v) { return Math.round(v * 5); }).join(','); if (!seen[k]) { seen[k] = 1; out.push(s); } }); return out; }
-  function index(list) { var m = {}; list.forEach(function (s) { var k = Math.round(s[0]) + '|' + Math.round(s[2]); (m[k] = m[k] || []).push(s); }); return m; }
-  var H = uniq(S.H), V = uniq(S.V), mH = index(H), mV = index(V);
-  function scan(list, m, len, gap, make) {
-    list.forEach(function (a) {
-      var L = a[2] - a[0];
-      if (Math.abs(L - len) > 0.8 && Math.abs(L - (len - 5.7)) > 0.8) return;
-      var r0 = Math.round(a[0]), r2 = Math.round(a[2]);
-      for (var i = -1; i <= 1; i++) for (var j = -1; j <= 1; j++) (m[(r0 + i) + '|' + (r2 + j)] || []).forEach(function (b) {
-        var g = b[1] - a[1];
-        if (Math.abs(g - gap) < 1.5 && Math.abs(a[0] - b[0]) < 0.8 && Math.abs(a[2] - b[2]) < 0.8) R.push(make(a, b, (len - L) / 2));
-      });
-    });
-  }
-  (sizes || BASE_SIZES).forEach(function (sz) {
-    var A = sz[0] * K, B = sz[1] * K;
-    [[A, B], [B, A]].forEach(function (p) {
-      scan(H, mH, p[0], p[1], function (a, b, pad) { return [a[0] - pad, a[1], a[2] + pad, b[1]]; });
-      scan(V, mV, p[0], p[1], function (a, b, pad) { return [a[1], a[0] - pad, b[1], a[2] + pad]; });
-    });
-  });
-  // office desks drawn with one long and one short edge only (the rest hidden by chairs or a return): a square corner
-  var C = [], A8 = 160 * K, B8 = 80 * K;
-  function corners(hs, vs, a, b, flip) {
-    hs.forEach(function (h) {
-      if (Math.abs((h[2] - h[0]) - a) > 0.8) return;
-      vs.forEach(function (v) {
-        if (Math.abs((v[2] - v[0]) - b) > 0.8) return;
-        var atEnd = Math.abs(v[1] - h[0]) < 0.8 || Math.abs(v[1] - h[2]) < 0.8, below = Math.abs(v[0] - h[1]) < 0.8, above = Math.abs(v[2] - h[1]) < 0.8;
-        if (!atEnd || !(below || above)) return;
-        var r = below ? [h[0], h[1], h[2], h[1] + b] : [h[0], h[1] - b, h[2], h[1]];
-        C.push(flip ? [r[1], r[0], r[3], r[2]] : r);
-      });
-    });
-  }
-  var Hb = H.filter(function (h) { var L = h[2] - h[0]; return Math.abs(L - A8) < 0.8 || Math.abs(L - B8) < 0.8; });
-  var Vb = V.filter(function (v) { var L = v[2] - v[0]; return Math.abs(L - A8) < 0.8 || Math.abs(L - B8) < 0.8; });
-  corners(Hb, Vb, A8, B8, false);   // horizontal desk: long top or bottom edge, short side edge
-  corners(Vb, Hb, A8, B8, true);    // upright desk: long side edge, short top or bottom edge
-  var D = [];
-  R.forEach(function (r) { if (!D.some(function (q) { return Math.abs(r[0] - q[0]) < 3 && Math.abs(r[1] - q[1]) < 3 && Math.abs(r[2] - q[2]) < 3 && Math.abs(r[3] - q[3]) < 3; })) D.push(r); });
-  var bad = D.map(function () { return false; });
-  for (var i = 0; i < D.length; i++) for (var j = 0; j < i; j++) {
-    var a = D[i], b = D[j], w = Math.min(a[2], b[2]) - Math.max(a[0], b[0]), h = Math.min(a[3], b[3]) - Math.max(a[1], b[1]);
-    if (w > 0 && h > 0 && w * h > 0.2 * Math.min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1]))) bad[i] = bad[j] = true;
-  }
-  D = D.filter(function (_, i) { return !bad[i]; });
-  // a gap between two desks of a row reads like a desk too: drop a candidate squeezed between two desks of another size
-  function sq(r, o) {
-    var vt = D.filter(function (q) { return q !== r && Math.abs(q[0] - r[0]) < 1 && Math.abs(q[2] - r[2]) < 1; });
-    var hz = D.filter(function (q) { return q !== r && Math.abs(q[1] - r[1]) < 1 && Math.abs(q[3] - r[3]) < 1; });
-    var hv = r[3] - r[1], wv = r[2] - r[0];
-    var up = vt.some(function (q) { return Math.abs(q[3] - r[1]) < 1 && Math.abs((q[3] - q[1]) - hv) > 5; }), dn = vt.some(function (q) { return Math.abs(q[1] - r[3]) < 1 && Math.abs((q[3] - q[1]) - hv) > 5; });
-    var lf = hz.some(function (q) { return Math.abs(q[2] - r[0]) < 1 && Math.abs((q[2] - q[0]) - wv) > 5; }), rt = hz.some(function (q) { return Math.abs(q[0] - r[2]) < 1 && Math.abs((q[2] - q[0]) - wv) > 5; });
-    return (up && dn) || (lf && rt);
-  }
-  D = D.filter(function (r) { return !sq(r); });
-  function ov(a, b, k) { var w = Math.min(a[2], b[2]) - Math.max(a[0], b[0]), h = Math.min(a[3], b[3]) - Math.max(a[1], b[1]); return w > k && h > k; }
-  var CD = [];
-  C.forEach(function (r) { if (!D.concat(CD).some(function (q) { return ov(r, q, 3); })) CD.push(r); });
-  var cbad = CD.map(function () { return false; });
-  for (var i2 = 0; i2 < CD.length; i2++) for (var j2 = 0; j2 < i2; j2++) if (ov(CD[i2], CD[j2], 3)) cbad[i2] = cbad[j2] = true;
-  return D.concat(CD.filter(function (_, i) { return !cbad[i]; })).map(function (r) { return r.map(function (v) { return Math.round(v * 10) / 10; }); });
-}
-// ---- Any drawing scale and desk size. findDesks works at 1:50 with known desk sizes (cm). A plan drawn at another
-// scale (1:100, or a model fitted to the page, e.g. 1:89) is read at that scale and then enlarged to 1:50.
-// The scale comes from rectangles whose sides match a desk size; desk sizes written on the plan ("130/60", "70X140") count most.
-var BASE_SIZES = [[160, 70], [140, 70], [160, 80]];
-var MORE_SIZES = [[130, 60], [120, 60], [140, 60], [150, 70], [150, 75], [180, 80], [180, 90], [120, 70], [140, 80], [120, 80], [200, 80], [200, 100]];
-function sizeLabels(page) {
-  return page.getTextContent().then(function (tc) {
-    var out = [], seen = {};
-    tc.items.forEach(function (it) {
-      var re = /(\d{2,3})\s*[\/xX×*]\s*(\d{2,3})/g, m;
-      while ((m = re.exec(it.str || ''))) {
-        var a = Math.max(+m[1], +m[2]), b = Math.min(+m[1], +m[2]);
-        if (a < 100 || a > 200 || b < 50 || b > 90 || a / b < 1.4 || a / b > 3.2 || seen[a + 'x' + b]) continue;
-        seen[a + 'x' + b] = 1; out.push([a, b]);
-      }
-    });
-    return out;
-  }, function () { return []; });
-}
-function sameSize(a, b) { return a[0] === b[0] && a[1] === b[1]; }
-function addSizes(list, more) { more.forEach(function (s) { if (!list.some(function (q) { return sameSize(q, s); })) list.push(s); }); return list; }
-// votes for 1:N scales: pairs of parallel, equal, aligned edges whose length and gap match a desk size at that scale
-function scaleVotes(S, labels) {
-  var sizes = addSizes(labels.slice(), BASE_SIZES.concat(MORE_SIZES)), votes = {};
-  function index(list) { var m = {}; list.forEach(function (s) { var k = Math.round(s[0]) + '|' + Math.round(s[2]); (m[k] = m[k] || []).push(s); }); return m; }
-  function near(m, p, q) { var r0 = Math.round(p), r2 = Math.round(q), out = []; for (var i = -1; i <= 1; i++) for (var j = -1; j <= 1; j++) out = out.concat(m[(r0 + i) + '|' + (r2 + j)] || []); return out; }
-  function run(list, perp) {
-    var m = index(list), pm = index(perp);
-    list.forEach(function (a) {
-      var L = a[2] - a[0];
-      near(m, a[0], a[2]).forEach(function (b) {
-        var g = b[1] - a[1];
-        if (g < 4 || Math.abs(a[0] - b[0]) > 0.6 || Math.abs(a[2] - b[2]) > 0.6) return;
-        // a closed shape: a side edge joins the two edges at one end (hatching and parallel lines have none)
-        if (!near(pm, a[1], b[1]).some(function (v) { return Math.abs(v[0] - a[1]) < 0.6 && Math.abs(v[2] - b[1]) < 0.6 && (Math.abs(v[1] - a[0]) < 0.6 || Math.abs(v[1] - a[2]) < 0.6); })) return;
-        sizes.forEach(function (sz) {
-          [[sz[0], sz[1]], [sz[1], sz[0]]].forEach(function (p) {
-            if (Math.abs(L / g - p[0] / p[1]) > 0.025 * p[0] / p[1]) return;
-            var n = 72 / 2.54 * p[0] / L; if (n < 20 || n > 250) return;
-            var key = Math.round(n), w = labels.some(function (q) { return sameSize(q, sz); }) ? 3 : 1;
-            var v = votes[key] = votes[key] || { n: 0, sizes: {} };
-            v.n += w; v.sizes[sz[0] + 'x' + sz[1]] = (v.sizes[sz[0] + 'x' + sz[1]] || 0) + 1;
-          });
-        });
-      });
-    });
-  }
-  S.forEach(function (fr) { run(fr.H, fr.V); run(fr.V, fr.H); });
-  // join neighbouring scales (89 and 90 are one scale)
-  var keys = Object.keys(votes).map(Number).sort(function (a, b) { return votes[b].n - votes[a].n; }), out = [];
-  keys.forEach(function (k) {
-    var c = out.filter(function (o) { return Math.abs(o.n - k) / o.n < 0.025; })[0];
-    if (!c) out.push(c = { n: k, votes: 0, sizes: {} });
-    c.votes += votes[k].n;
-    Object.keys(votes[k].sizes).forEach(function (z) { c.sizes[z] = (c.sizes[z] || 0) + votes[k].sizes[z]; });
-  });
-  return out.sort(function (a, b) { return b.votes - a.votes; });
-}
-// Wings of a building drawn at an angle, and benches turned to any angle (e.g. along a curved facade): the main
-// angles of the drawing's lines, -45°..45°, besides 0. Only lines about a desk edge long count (20–110 pt), so the many
-// short chords of curved walls and round columns do not hide a turned bench (set by the user 24 Nov 2026).
-function tilts(A) {
-  var bins = {};
-  A.forEach(function (q) {
-    var dx = q[2] - q[0], dy = q[3] - q[1], L = Math.sqrt(dx * dx + dy * dy);
-    if (L < 20 || L > 110) return;
-    var a = Math.atan2(dy, dx) * 180 / Math.PI; a = ((a % 90) + 90) % 90; if (a > 45) a -= 90;
-    if (Math.abs(a) < 0.5 || Math.abs(a) > 44.5) return;
-    var k = Math.round(a * 5), b = bins[k] = bins[k] || { n: 0, w: 0, s: 0 }; b.n++; b.w += L; b.s += a * L;
-  });
-  var out = [];
-  Object.keys(bins).map(Number).sort(function (a, b) { return bins[b].n - bins[a].n; }).forEach(function (k) {
-    if (bins[k].n < 8 || out.some(function (o) { return Math.abs(o.k - k) <= 2; })) return;
-    var w = 0, sm = 0; for (var i = k - 1; i <= k + 1; i++) if (bins[i]) { w += bins[i].w; sm += bins[i].s; }
-    out.push({ k: k, a: sm / w });
-  });
-  return out.slice(0, 8).map(function (o) { return o.a; });
-}
-// the segments turned by -deg and enlarged f times, split into horizontal and vertical ones lo–hi pt long
-function frameSegs(A, deg, f, lo, hi) {
-  var t = -deg * Math.PI / 180, c = Math.cos(t) * f, sn = Math.sin(t) * f, H = [], V = [];
-  A.forEach(function (q) {
-    var ax = c * q[0] - sn * q[1], ay = sn * q[0] + c * q[1], bx = c * q[2] - sn * q[3], by = sn * q[2] + c * q[3];
-    var dx = Math.abs(bx - ax), dy = Math.abs(by - ay);
-    if (dy < 0.4 && dx > lo && dx < hi) H.push([Math.min(ax, bx), (ay + by) / 2, Math.max(ax, bx)]);
-    else if (dx < 0.4 && dy > lo && dy < hi) V.push([Math.min(ay, by), (ax + bx) / 2, Math.max(ay, by)]);
-  });
-  return { H: H, V: V };
-}
-// read the desks of a PDF page at any scale and angle: returns { D (desks in 1:50 points), f (page points × f = 1:50 points), n (1:n) }
-function readDesks(lib, page) {
-  var vp = page.getViewport({ scale: 1 });
-  return Promise.all([pdfSegments(lib, page, vp, 5, 400), sizeLabels(page)]).then(function (r) {
-    var A = r[0].A, labels = r[1], angles = [0].concat(tilts(A));
-    var box = [Infinity, Infinity, -Infinity, -Infinity];   // everything drawn on the page, in page points
-    A.forEach(function (q) { box[0] = Math.min(box[0], q[0], q[2]); box[1] = Math.min(box[1], q[1], q[3]); box[2] = Math.max(box[2], q[0], q[2]); box[3] = Math.max(box[3], q[1], q[3]); });
-    var cands = [{ n: 50, sizes: addSizes(BASE_SIZES.slice(), labels) }];
-    scaleVotes(angles.map(function (a) { return frameSegs(A, a, 1, 5, 400); }), labels).slice(0, 4).forEach(function (c) {
-      if (c.votes < 3 || Math.abs(c.n - 50) / 50 < 0.025) return;
-      var extra = Object.keys(c.sizes).filter(function (z) { return c.sizes[z] >= 3; }).map(function (z) { return z.split('x').map(Number); });
-      cands.push({ n: c.n, sizes: addSizes(addSizes(BASE_SIZES.slice(), labels), extra) });
-    });
-    // two desks overlap: tested in the frame of each one's angle (a turned desk is kept as its own size around its centre)
-    function corners(d, deg) {
-      var t = deg * Math.PI / 180, co = Math.cos(t), sn = Math.sin(t), cx = (d[0] + d[2]) / 2, cy = (d[1] + d[3]) / 2, w = (d[2] - d[0]) / 2, h = (d[3] - d[1]) / 2;
-      return [[-w, -h], [w, -h], [w, h], [-w, h]].map(function (p) { return [cx + co * p[0] - sn * p[1], cy + sn * p[0] + co * p[1]]; });
-    }
-    function ov(a, da, b, db) {
-      var A = corners(a, da), B = corners(b, db), axes = [];
-      [da, db].forEach(function (g) { var t = g * Math.PI / 180; axes.push([Math.cos(t), Math.sin(t)], [-Math.sin(t), Math.cos(t)]); });
-      return axes.every(function (x) {
-        var pa = A.map(function (p) { return p[0] * x[0] + p[1] * x[1]; }), pb = B.map(function (p) { return p[0] * x[0] + p[1] * x[1]; });
-        return Math.min(Math.max.apply(null, pa), Math.max.apply(null, pb)) - Math.max(Math.min.apply(null, pa), Math.min.apply(null, pb)) > 3;
-      });
-    }
-    var best = null;
-    cands.forEach(function (c) {
-      var f = c.n / 50, D = [], DA = [];
-      angles.forEach(function (deg) {
-        var t = deg * Math.PI / 180, co = Math.cos(t), sn = Math.sin(t);
-        findDesks(frameSegs(A, deg, f, 20, 110), c.sizes).forEach(function (d) {
-          if (deg) {   // back to the page's angle: same size, centre turned back
-            var cx = (d[0] + d[2]) / 2, cy = (d[1] + d[3]) / 2, w = d[2] - d[0], h = d[3] - d[1], x = co * cx - sn * cy, y = sn * cx + co * cy;
-            d = [x - w / 2, y - h / 2, x + w / 2, y + h / 2].map(function (v) { return Math.round(v * 10) / 10; });
-          }
-          if (!D.some(function (q, k) { return ov(d, deg, q, DA[k]); })) { D.push(d); DA.push(Math.round(deg * 100) / 100); }
-        });
-      });
-      // 1:50 (tried first) stays unless another scale finds clearly more desks
-      if (!best || D.length > Math.max(best.D.length * 1.25, best.D.length + 2)) best = { D: D, ang: DA, f: f, n: c.n, sizes: c.sizes, angles: angles };
-    });
-    if (isFinite(box[0])) best.box = box.map(function (v) { return v * best.f; });
-    // then the chairs put the desks right (one desk per chair, centred on it)
-    return pdfInk(lib, page).then(function (ink) { return chairDesks(best, findChairs(ink.segs)); }, function () { return best; });
-  });
-}
-// ---- Chairs mark desk centres (set by the user 24 Nov 2026): a top-view office chair sits centred on its desk's long
-// edge, so the desk's centre lies on the line from the chair perpendicular to that edge, and the number of chairs around
-// a bench is its number of desks. Chairs = small closed clusters of short strokes (curves, or curves cut into many short
-// lines), roughly square, all about one size; each chair's desk is read from the lines around it: the nearest edge in
-// front of the chair, the parallel edge one desk depth further, and the cross lines (desk ends) on both sides of it.
-// segs: pdfInk segments (page points). Returns [{ c: [cx, cy], s: size, d: [x0, y0, x1, y1] desk in page points or null }].
-function findChairs(segs) {
-  var sh = [], H = [], V = [];
-  segs.forEach(function (q) {
-    var dx = q[2] - q[0], dy = q[3] - q[1], L = Math.sqrt(dx * dx + dy * dy);
-    if (L < 0.05) return;
-    if (L < 8 && !q[7]) sh.push(q);
-    if (L >= 4) {
-      if (Math.abs(dy) < 0.15) H.push([Math.min(q[0], q[2]), Math.max(q[0], q[2]), (q[1] + q[3]) / 2]);
-      else if (Math.abs(dx) < 0.15) V.push([Math.min(q[1], q[3]), Math.max(q[1], q[3]), (q[0] + q[2]) / 2]);
-    }
-  });
-  // short strokes joined end to end = one drawn piece
-  var par = new Int32Array(sh.length), ends = new Map();
-  for (var i = 0; i < sh.length; i++) par[i] = i;
-  function root(i) { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; }
-  function key(x, y) { return Math.round(x * 4) * 1e6 + Math.round(y * 4); }
-  sh.forEach(function (q, i) {
-    [key(q[0], q[1]), key(q[2], q[3])].forEach(function (k) { var j = ends.get(k); if (j === undefined) ends.set(k, i); else { var a = root(i), b = root(j); if (a !== b) par[a] = b; } });
-  });
-  var comp = new Map();
-  sh.forEach(function (q, i) {
-    var r = root(i), c = comp.get(r);
-    if (!c) { c = { b: [Infinity, Infinity, -Infinity, -Infinity], n: 0, cv: 0, mx: 0, my: 0, w: 0 }; comp.set(r, c); }
-    var ln = Math.sqrt((q[2] - q[0]) * (q[2] - q[0]) + (q[3] - q[1]) * (q[3] - q[1])); c.mx += (q[0] + q[2]) / 2 * ln; c.my += (q[1] + q[3]) / 2 * ln; c.w += ln;
-    c.b[0] = Math.min(c.b[0], q[0], q[2]); c.b[1] = Math.min(c.b[1], q[1], q[3]); c.b[2] = Math.max(c.b[2], q[0], q[2]); c.b[3] = Math.max(c.b[3], q[1], q[3]);
-    c.n++; if (Math.abs(q[2] - q[0]) > 0.05 && Math.abs(q[3] - q[1]) > 0.05) c.cv++;
-  });
-  // pieces whose boxes overlap = one symbol (seat, back and arms of a chair)
-  var P = [], cb = {};
-  comp.forEach(function (c) { if (c.b[2] - c.b[0] < 70 && c.b[3] - c.b[1] < 70) P.push(c); });
-  var pp = P.map(function (_, i) { return i; });
-  function pr(i) { while (pp[i] !== i) { pp[i] = pp[pp[i]]; i = pp[i]; } return i; }
-  P.forEach(function (c, i) {
-    var gx0 = Math.floor(c.b[0] / 20), gx1 = Math.floor(c.b[2] / 20), gy0 = Math.floor(c.b[1] / 20), gy1 = Math.floor(c.b[3] / 20);
-    for (var gx = gx0; gx <= gx1; gx++) for (var gy = gy0; gy <= gy1; gy++) {
-      var k = gx + '|' + gy, l = cb[k] || (cb[k] = []);
-      l.forEach(function (j) { var o = P[j]; if (c.b[0] < o.b[2] + 0.3 && o.b[0] < c.b[2] + 0.3 && c.b[1] < o.b[3] + 0.3 && o.b[1] < c.b[3] + 0.3) { var a = pr(i), b = pr(j); if (a !== b) pp[a] = b; } });
-      l.push(i);
-    }
-  });
-  var G = {};
-  P.forEach(function (c, i) {
-    var r = pr(i), g = G[r] || (G[r] = { b: [Infinity, Infinity, -Infinity, -Infinity], n: 0, cv: 0, mx: 0, my: 0, w: 0 }); g.mx += c.mx; g.my += c.my; g.w += c.w;
-    g.b = [Math.min(g.b[0], c.b[0]), Math.min(g.b[1], c.b[1]), Math.max(g.b[2], c.b[2]), Math.max(g.b[3], c.b[3])]; g.n += c.n; g.cv += c.cv;
-  });
-  var cand = Object.keys(G).map(function (k) { return G[k]; }).filter(function (g) {
-    var w = g.b[2] - g.b[0], h = g.b[3] - g.b[1];
-    return g.n >= 10 && g.cv >= 6 && w >= 5 && h >= 5 && w <= 60 && h <= 60 && Math.max(w, h) / Math.min(w, h) <= 1.6;
-  });
-  // lines by position, for the desk edges
-  function idx(list) { var m = {}; list.forEach(function (l) { var k = Math.floor(l[2] / 4); (m[k] = m[k] || []).push(l); }); return m; }
-  var mH = idx(H), mV = idx(V);
-  function lines(m, a, b) { var out = []; for (var k = Math.floor(Math.min(a, b) / 4); k <= Math.floor(Math.max(a, b) / 4); k++) (m[k] || []).forEach(function (l) { if (l[2] >= Math.min(a, b) && l[2] <= Math.max(a, b)) out.push(l); }); return out; }
-  // the desk in front of a chair: dir 0..3 = +x, -x, +y, -y
-  function deskOf(cx, cy, s, dir) {
-    var hz = dir < 2, sg = dir % 2 ? -1 : 1, u = hz ? cx : cy, v = hz ? cy : cx, mE = hz ? mV : mH, mX = hz ? mH : mV;
-    var near = function (list, at) { var best = null; list.forEach(function (l) { if (!best || Math.abs(l[2] - at) < Math.abs(best[2] - at)) best = l; }); return best; };
-    var e1 = near(lines(mE, u + sg * 0.12 * s, u + sg * 1.1 * s).filter(function (l) { return l[0] <= v - 0.3 * s && l[1] >= v + 0.3 * s; }), u);
-    if (!e1) return null;
-    var e2 = near(lines(mE, e1[2] + sg * 0.9 * s, e1[2] + sg * 2.2 * s).filter(function (l) { return l[0] <= v - 0.3 * s && l[1] >= v + 0.3 * s; }), e1[2]);
-    if (!e2) return null;
-    var depth = Math.abs(e2[2] - e1[2]), lo = Math.min(e1[2], e2[2]), hi = Math.max(e1[2], e2[2]);
-    var cross = function (a, b) { return lines(mX, a, b).filter(function (l) { return l[0] <= lo + 0.15 * depth && l[1] >= hi - 0.15 * depth; }); };
-    // the desk ends: a cross line on each side, the same distance from the chair (a line inside the desk, e.g. a drawn
-    // middle line or a cable tray, is not an end when the chair says otherwise)
-    var ups = cross(v - 2.2 * s, v - 0.5 * s), dns = cross(v + 0.5 * s, v + 2.2 * s), half = 0, bestD = Infinity;
-    ups.forEach(function (p) { dns.forEach(function (q) {
-      var a = v - p[2], b = q[2] - v, dd = Math.abs(a - b);
-      if (dd <= 0.12 * (a + b) && (a + b) / depth >= 1.4 && (a + b) / depth <= 2.8 && dd + 0.02 * (a + b) < bestD) { bestD = dd + 0.02 * (a + b); half = (a + b) / 2; }
-    }); });
-    if (!half) return null;
-    var r = [lo, v - half, hi, v + half];
-    return { d: hz ? r : [r[1], r[0], r[3], r[2]], gap: Math.abs(e1[2] - u) };
-  }
-  function build(list) {
-    return list.map(function (g) {
-      // the backrest holds more ink than the front: a chair faces away from its ink's centre (a round stool faces nowhere)
-      var cx = (g.b[0] + g.b[2]) / 2, cy = (g.b[1] + g.b[3]) / 2, s = Math.max(g.b[2] - g.b[0], g.b[3] - g.b[1]);
-      var mx = g.mx / g.w - cx, my = g.my / g.w - cy, hz = Math.abs(mx) >= Math.abs(my), off = Math.max(Math.abs(mx), Math.abs(my));
-      if (off < 0.02 * s) return null;   // a chair pulled out at an angle still faces its desk's side
-      var dir = hz ? (mx < 0 ? 0 : 1) : (my < 0 ? 2 : 3), k = deskOf(cx, cy, s, dir);
-      return { c: [cx, cy], s: s, f: dir, d: k ? k.d : null };
-    }).filter(Boolean);
-  }
-  var first = build(cand), sz = first.filter(function (c) { return c.d; }).map(function (c) { return c.s; }).sort(function (a, b) { return a - b; });
-  if (sz.length < 4) return [];
-  // chairs are all about one size: symbols of another size (plants, lamps, letters) are left out
-  var med = sz[Math.floor(sz.length / 2)];
-  return first.filter(function (c) { return c.s >= 0.75 * med && c.s <= 1.35 * med; });
-}
-// the desks read from the lines (R from readDesks) put right by the chairs: a desk the chairs agree with stays; one they
-// disagree with (its centre off the chair, a middle line taken for an edge, a strip read as a desk) gives way to the desk
-// built on the chair. When most desks have chairs, a leftover box much smaller than a desk is not a desk. A plan read at
-// a wrong scale (desks far from 1–2.2 m long) is set to the scale the chairs' desks give (160 cm long).
-// Sets R.D, R.ang, R.f, R.n, R.box and R.chairs ([x, y] per desk in layout units, null = none found).
-function chairDesks(R, C) {
-  var K = 72 / 2.54 / 50, f0 = R.f, CD = [];
-  function area(r) { return (r[2] - r[0]) * (r[3] - r[1]); }
-  function ovl(a, b) { var w = Math.min(a[2], b[2]) - Math.max(a[0], b[0]), h = Math.min(a[3], b[3]) - Math.max(a[1], b[1]); return w > 0 && h > 0 ? w * h : 0; }
-  C.forEach(function (c) { if (c.d && !CD.some(function (o) { return ovl(o.d, c.d) > 0.5 * Math.min(area(o.d), area(c.d)); })) CD.push(c); });
-  R.chairs = null;
-  if (CD.length < 4) return R;
-  var longs = CD.map(function (c) { return Math.max(c.d[2] - c.d[0], c.d[3] - c.d[1]); }).sort(function (a, b) { return a - b; }), medL = longs[Math.floor(longs.length / 2)];
-  var areas = CD.map(function (c) { return area(c.d); }).sort(function (a, b) { return a - b; }), medA = areas[Math.floor(areas.length / 2)];
-  var cm = medL * f0 / K, f = cm < 100 || cm > 220 ? 160 * K / medL : f0, plan = CD.length >= 0.3 * R.D.length;
-  var used = CD.map(function () { return false; }), D = [], A = [], CH = [];
-  R.D.forEach(function (d, i) {
-    var o = d.map(function (v) { return v / f0; }), hit = [];
-    CD.forEach(function (c, k) { if (ovl(o, c.d) > 0.2 * Math.min(area(o), area(c.d))) hit.push(k); });
-    if (!hit.length) { if (!plan || area(o) >= 0.6 * medA) { D.push(o); A.push(R.ang[i] || 0); CH.push(null); } return; }
-    var c = CD[hit[0]].d, mn = Math.min(c[2] - c[0], c[3] - c[1]);
-    var agree = hit.length === 1 && Math.abs((o[0] + o[2]) / 2 - (c[0] + c[2]) / 2) < 0.2 * mn && Math.abs((o[1] + o[3]) / 2 - (c[1] + c[3]) / 2) < 0.2 * mn &&
-      [[o[2] - o[0], c[2] - c[0]], [o[3] - o[1], c[3] - c[1]]].every(function (p) { return p[0] / p[1] > 0.8 && p[0] / p[1] < 1.25; });
-    if (agree && !used[hit[0]]) { used[hit[0]] = true; D.push(o); A.push(R.ang[i] || 0); CH.push(CD[hit[0]].c); }
-  });
-  // desks centred on their chairs can leave a sliver between two desks of one bench (or overlap a little): they meet halfway
-  CD.forEach(function (a, i) { CD.forEach(function (b, j) {
-    if (j <= i || used[i] || used[j]) return;
-    var p = a.d, q = b.d, t = 0.15 * Math.min(p[2] - p[0], p[3] - p[1], q[2] - q[0], q[3] - q[1]);
-    [[0, 1], [1, 0]].forEach(function (ax) {
-      var u = ax[0], v = ax[1];   // v: the axis along which they follow each other, u: the one they share
-      if (Math.abs(p[u] - q[u]) > t || Math.abs(p[u + 2] - q[u + 2]) > t) return;
-      var lo = p[v] < q[v] ? p : q, hi = lo === p ? q : p, gap = hi[v] - lo[v + 2];
-      if (Math.abs(gap) < t && gap !== 0) { var m = (hi[v] + lo[v + 2]) / 2; lo[v + 2] = m; hi[v] = m; }
-    });
-  }); });
-  CD.forEach(function (c, k) { if (!used[k]) { D.push(c.d); A.push(0); CH.push(c.c); } });
-  // desks kept without a chair of their own: a chair right at one of their edges
-  D.forEach(function (d, i) {
-    if (CH[i] || A[i]) return;
-    C.forEach(function (c) {
-      if (CH[i]) return;
-      var gx = Math.max(d[0] - c.c[0], 0, c.c[0] - d[2]), gy = Math.max(d[1] - c.c[1], 0, c.c[1] - d[3]);
-      if ((gx > 0) !== (gy > 0) && Math.max(gx, gy) < 0.8 * c.s) CH[i] = c.c;
-    });
-  });
-  R.D = D.map(function (d) { return d.map(function (v) { return Math.round(v * f * 10) / 10; }); });
-  R.ang = A; R.chairs = CH.map(function (c) { return c ? [Math.round(c[0] * f * 10) / 10, Math.round(c[1] * f * 10) / 10] : null; });
-  if (R.box) R.box = R.box.map(function (v) { return v / f0 * f; });
-  R.f = f; R.n = Math.round(f * 50);
-  return R;
-}
-// ---- OSH = open space hidden (rules C2 23-25, set by the user 24 Nov 2026). An open-space seat is OSH when all hold:
-// (1) right behind its chair (40-200 cm) is something nobody sees through from a passage: a hatched wall (gypsum,
-// cement), a column joined to a wall, or the facade (the outer edge of the drawing, glass too: nobody passes outside);
-// a free-standing column does not count (people walk round it); (2) nobody sits behind it (no desk of another bench
-// there); (3) its bench end, when it is at one, faces a wall or the facade (a dead-end pocket), never an aisle or a
-// corridor (a glass room front, a desk, or nothing within about 5 m). A thin plain line behind the chair (no hatch) may
-// be glass or opaque: those seats (with the rest of their bench row) are not decided but asked with a red flag
-// "Transparent? y / n" (L.flags, q: 'transparent'); n makes them OSH. Desks at any angle are read in their own frame.
-// ASK_TRANSPARENT: the "Transparent? y / n" question (C2 rule 24) is paused by the user (24 Nov 2026): a plain thin wall
-// behind the seats = OS, no question flag. OSH_V 3: stored layouts are read again once, which removes their question flags.
-var OSH_V = 3, OSH_REV = 0, ASK_TRANSPARENT = false;
 // every line and curve of the page (curves cut into 8 chords), in page points: [ax, ay, bx, by, curve, lineWidth, coloured, filled]
 // coloured = drawn in a colour (red / blue / green annotations, dimensions): left out of the reading
 function pdfInk(lib, page) {
@@ -1473,294 +1112,6 @@ function pdfInk(lib, page) {
     return { segs: out, w: vp.width, h: vp.height };
   });
 }
-// the drawing as grids of 2-unit cells (layout units): ink, the facade band (outside + 40 units), hatch (walls,
-// columns), free-standing columns, long straight lines
-function oshGrid(segs, f, W, H) {
-  var C = 2, cols = Math.ceil(W * f / C) + 2, rows = Math.ceil(H * f / C) + 2, N = cols * rows;
-  var ink = new Uint8Array(N), hat = new Uint8Array(N), lin = new Int32Array(N);
-  for (var z = 0; z < N; z++) lin[z] = -1;
-  var S = [];
-  var seen = {};
-  segs.forEach(function (q) {
-    if (q[6]) return;
-    var a = Math.round(q[0] * 4) + ',' + Math.round(q[1] * 4), b = Math.round(q[2] * 4) + ',' + Math.round(q[3] * 4), key = a < b ? a + ',' + b : b + ',' + a;
-    if (seen[key]) return; seen[key] = 1;   // the same line drawn twice counts once
-    S.push([q[0] * f, q[1] * f, q[2] * f, q[3] * f, q[4], q[5], q[7]]);
-  });
-  function draw(s, arr, val) {
-    var dx = s[2] - s[0], dy = s[3] - s[1], L = Math.sqrt(dx * dx + dy * dy), n = Math.max(1, Math.ceil(L / (C / 2)));
-    for (var k = 0; k <= n; k++) {
-      var x = Math.floor((s[0] + dx * k / n) / C), y = Math.floor((s[1] + dy * k / n) / C);
-      if (x < 0 || y < 0 || x >= cols || y >= rows) continue;
-      arr[y * cols + x] = val;
-    }
-  }
-  var PW = W * f, PH = H * f;
-  // hatch = short diagonal strokes whose two ends sit on other lines (between the two lines of a wall, inside a
-  // column), in a family of at least 3 parallel strokes close together
-  var cand = [], isC = {};
-  S.forEach(function (s, i) {
-    var dx = s[2] - s[0], dy = s[3] - s[1], L = Math.sqrt(dx * dx + dy * dy);
-    if (L > PW * 0.85 || L > PH * 0.85) { s.frame = 1; return; }
-    if (s[4] || L < 2 || L > 120) return;
-    var a = Math.atan2(dy, dx) * 180 / Math.PI; a = ((a % 180) + 180) % 180; var m = a % 90;
-    if (m < 15 || m > 75) return;
-    cand.push({ i: i, a: a, x: (s[0] + s[2]) / 2, y: (s[1] + s[3]) / 2, L: L }); isC[i] = 1;
-  });
-  var other = new Uint8Array(N);
-  S.forEach(function (s, i) { if (!s.frame && !isC[i]) draw(s, other, 1); });
-  function touches(x, y) {
-    var cx = Math.floor(x / C), cy = Math.floor(y / C);
-    for (var j = -2; j <= 2; j++) for (var i = -2; i <= 2; i++) { var xx = cx + i, yy = cy + j; if (xx >= 0 && yy >= 0 && xx < cols && yy < rows && other[yy * cols + xx]) return true; }
-    return false;
-  }
-  var hb = {};
-  cand = cand.filter(function (c) { var s = S[c.i]; return touches(s[0], s[1]) && touches(s[2], s[3]); });
-  cand.forEach(function (c) { var k = Math.floor(c.x / 20) + '|' + Math.floor(c.y / 20); (hb[k] = hb[k] || []).push(c); });
-  cand.forEach(function (c) {
-    // parallel strokes beside it (not its own continuation): at least three different offsets, 1.5-20 units away
-    // (a wall's hatch; the two or three lines of a glass wall are not enough)
-    var s = S[c.i], ux = (s[2] - s[0]) / c.L, uy = (s[3] - s[1]) / c.L, offs = [], cx = Math.floor(c.x / 20), cy = Math.floor(c.y / 20);
-    for (var i = -2; i <= 2; i++) for (var j = -2; j <= 2; j++) (hb[(cx + i) + '|' + (cy + j)] || []).forEach(function (o) {
-      if (o === c || Math.abs(o.a - c.a) > 1.5) return;
-      var dx = o.x - c.x, dy = o.y - c.y, along = dx * ux + dy * uy, off = -dx * uy + dy * ux;
-      if (Math.abs(off) < 1.5 || Math.abs(off) > 20 || Math.abs(along) > c.L + o.L) return;
-      if (!offs.some(function (v) { return Math.abs(v - off) < 1.5; })) offs.push(off);
-    });
-    if (offs.length >= 3) S[c.i].hatch = 1;
-  });
-  S.forEach(function (s, i) {
-    if (s.frame) return;
-    draw(s, ink, 1);
-    if (s.hatch) draw(s, hat, 1);
-    else if (!s[4]) { var dx = s[2] - s[0], dy = s[3] - s[1]; if (dx * dx + dy * dy >= 30 * 30) draw(s, lin, i); }
-  });
-  // a thin wall drawn as two parallel lines with one line across from corner to corner (no hatch strokes) is a wall too
-  var LS = [], lb = {};
-  S.forEach(function (s, i) {
-    if (s.frame || s[4]) return;
-    var dx = s[2] - s[0], dy = s[3] - s[1], L = Math.sqrt(dx * dx + dy * dy); if (L < 8) return;
-    var o = { i: i, L: L, ux: dx / L, uy: dy / L, x: (s[0] + s[2]) / 2, y: (s[1] + s[3]) / 2 };
-    LS.push(o); var k = Math.floor(o.x / 60) + '|' + Math.floor(o.y / 60); (lb[k] = lb[k] || []).push(o);
-  });
-  function near(o, fn) { var cx = Math.floor(o.x / 60), cy = Math.floor(o.y / 60); for (var i = -2; i <= 2; i++) for (var j = -2; j <= 2; j++) (lb[(cx + i) + '|' + (cy + j)] || []).forEach(fn); }
-  function onLine(px, py, o) { var s = S[o.i], t = (px - s[0]) * o.ux + (py - s[1]) * o.uy; return t > -1.5 && t < o.L + 1.5 && Math.abs(-(px - s[0]) * o.uy + (py - s[1]) * o.ux) < 1.5; }
-  LS.forEach(function (a) {
-    if (a.L < 30) return;
-    near(a, function (b) {
-      if (b.i <= a.i || b.L < 30 || Math.abs(a.ux * b.uy - a.uy * b.ux) > 0.02) return;
-      var sa = S[a.i], sb = S[b.i], off = -(sb[0] - sa[0]) * a.uy + (sb[1] - sa[1]) * a.ux;
-      if (Math.abs(off) < 3 || Math.abs(off) > 16) return;
-      var t0 = (sb[0] - sa[0]) * a.ux + (sb[1] - sa[1]) * a.uy, t1 = (sb[2] - sa[0]) * a.ux + (sb[3] - sa[1]) * a.uy;
-      var lo = Math.max(0, Math.min(t0, t1)), hi = Math.min(a.L, Math.max(t0, t1)); if (hi - lo < 0.5 * Math.min(a.L, b.L)) return;
-      // a line from one of them to the other, running along the wall (a corner-to-corner diagonal)
-      var hitD = false;
-      near(a, function (c) {
-        if (hitD || c === a || c === b || c.L < 0.5 * (hi - lo)) return;
-        var cr = Math.abs(c.ux * a.uy - c.uy * a.ux); if (cr < 0.004 || cr > 0.5) return;
-        var s = S[c.i];
-        if ((onLine(s[0], s[1], a) && onLine(s[2], s[3], b)) || (onLine(s[0], s[1], b) && onLine(s[2], s[3], a))) hitD = true;
-      });
-      if (!hitD) return;
-      for (var t = lo; t <= hi; t += 1) for (var v = 0; v <= 1; v += 0.25) {
-        var px = sa[0] + a.ux * t - a.uy * off * v, py = sa[1] + a.uy * t + a.ux * off * v, cx = Math.floor(px / C), cy = Math.floor(py / C);
-        if (cx >= 0 && cy >= 0 && cx < cols && cy < rows) hat[cy * cols + cx] = 1;
-      }
-    });
-  });
-  // close small gaps in the drawing, then flood the outside from the edges of the sheet
-  var ink2 = new Uint8Array(N);
-  for (var y = 0; y < rows; y++) for (var x = 0; x < cols; x++) if (ink[y * cols + x]) for (var j = -1; j <= 1; j++) for (var i = -1; i <= 1; i++) { var xx = x + i, yy = y + j; if (xx >= 0 && yy >= 0 && xx < cols && yy < rows) ink2[yy * cols + xx] = 1; }
-  var out = new Uint8Array(N), q = new Int32Array(N), qh = 0, qt = 0;
-  function seed(k) { if (!ink2[k] && !out[k]) { out[k] = 1; q[qt++] = k; } }
-  for (x = 0; x < cols; x++) { seed(x); seed((rows - 1) * cols + x); }
-  for (y = 0; y < rows; y++) { seed(y * cols); seed(y * cols + cols - 1); }
-  while (qh < qt) { var k = q[qh++], kx = k % cols; if (kx > 0) seed(k - 1); if (kx < cols - 1) seed(k + 1); if (k >= cols) seed(k - cols); if (k < N - cols) seed(k + cols); }
-  // the facade band: everything within 40 units of the outside (the facade's lines, mullions, sills)
-  var fz = new Uint8Array(N), fq = new Int32Array(N), fh = 0, ft = 0, fd = new Uint8Array(N);
-  for (var k1 = 0; k1 < N; k1++) if (out[k1]) { fz[k1] = 1; fq[ft++] = k1; }
-  while (fh < ft) {
-    var k4 = fq[fh++], x4 = k4 % cols, y4 = (k4 / cols) | 0; if (fd[k4] >= 20) continue;
-    for (j = -1; j <= 1; j++) for (i = -1; i <= 1; i++) {
-      xx = x4 + i; yy = y4 + j; if (xx < 0 || yy < 0 || xx >= cols || yy >= rows) continue;
-      var k5 = yy * cols + xx; if (!fz[k5]) { fz[k5] = 1; fd[k5] = fd[k4] + 1; fq[ft++] = k5; }
-    }
-  }
-  // hatch cells grow by 2 cells (the wall between its hatch strokes)
-  var hat2 = new Uint8Array(N);
-  for (y = 0; y < rows; y++) for (x = 0; x < cols; x++) if (hat[y * cols + x]) for (j = -2; j <= 2; j++) for (i = -2; i <= 2; i++) { xx = x + i; yy = y + j; if (xx >= 0 && yy >= 0 && xx < cols && yy < rows) hat2[yy * cols + xx] = 1; }
-  // hatched blocks: a small one standing alone (both sides under about 2.3 m) is a free-standing column
-  var lab = new Int32Array(N), col = new Uint8Array(N), stk = [];
-  for (var k0 = 0; k0 < N; k0++) {
-    if (!hat2[k0] || lab[k0]) continue;
-    var id = k0 + 1, mem = [k0], bx0 = 1e9, by0 = 1e9, bx1 = -1, by1 = -1; lab[k0] = id; stk = [k0];
-    while (stk.length) {
-      var kk = stk.pop(), kx = kk % cols, ky = (kk / cols) | 0;
-      if (kx < bx0) bx0 = kx; if (kx > bx1) bx1 = kx; if (ky < by0) by0 = ky; if (ky > by1) by1 = ky;
-      for (j = -1; j <= 1; j++) for (i = -1; i <= 1; i++) {
-        xx = kx + i; yy = ky + j; if (xx < 0 || yy < 0 || xx >= cols || yy >= rows) continue;
-        var nk = yy * cols + xx; if (hat2[nk] && !lab[nk]) { lab[nk] = id; stk.push(nk); mem.push(nk); }
-      }
-    }
-    if ((bx1 - bx0 + 1) * C < 130 && (by1 - by0 + 1) * C < 130) mem.forEach(function (m) { col[m] = 1; });
-  }
-  return { C: C, cols: cols, rows: rows, ink: ink2, out: fz, hat: hat2, col: col, lin: lin, S: S };
-}
-// frame of desk i: centre, unit long axis u, unit normal n toward the chair, half length / depth
-function deskFrame(d, a, chair) {
-  var t = (a || 0) * Math.PI / 180, ex = [Math.cos(t), Math.sin(t)], ey = [-Math.sin(t), Math.cos(t)];
-  var w = (d[2] - d[0]) / 2, h = (d[3] - d[1]) / 2, c = [(d[0] + d[2]) / 2, (d[1] + d[3]) / 2];
-  var u = w >= h ? ex : ey, nn = w >= h ? ey : ex, hl = Math.max(w, h), hd = Math.min(w, h);
-  if (chair && ((chair[0] - c[0]) * nn[0] + (chair[1] - c[1]) * nn[1]) < 0) nn = [-nn[0], -nn[1]];
-  return { c: c, u: u, n: nn, hl: hl, hd: hd };
-}
-function oshFeatures(desks, ang, G, chairs) {
-  ang = ang || [];
-  var C = G.C, cols = G.cols, rows = G.rows, CH = Array.isArray(chairs) && chairs.length === desks.length ? chairs : chairsFor(desks, ang), F = desks.map(function (d, i) { return deskFrame(d, ang[i], CH[i]); });
-  // desk mask (desk index + 1), desks a little enlarged
-  var dm = new Int32Array(cols * rows);
-  F.forEach(function (f, i) {
-    for (var a = -f.hl - 1; a <= f.hl + 1; a += 1) for (var b = -f.hd - 1; b <= f.hd + 1; b += 1) {
-      var x = Math.floor((f.c[0] + f.u[0] * a + f.n[0] * b) / C), y = Math.floor((f.c[1] + f.u[1] * a + f.n[1] * b) / C);
-      if (x >= 0 && y >= 0 && x < cols && y < rows) dm[y * cols + x] = i + 1;
-    }
-  });
-  // benches: desks touching each other
-  var par = desks.map(function (_, i) { return i; });
-  function root(i) { while (par[i] !== i) i = par[i] = par[par[i]]; return i; }
-  F.forEach(function (a, i) { F.forEach(function (b, j) {
-    if (j >= i) return;
-    var dx = b.c[0] - a.c[0], dy = b.c[1] - a.c[1];
-    var p1 = Math.abs(dx * a.u[0] + dy * a.u[1]), p2 = Math.abs(dx * a.n[0] + dy * a.n[1]);
-    var s1 = a.hl + Math.abs(b.hl * (b.u[0] * a.u[0] + b.u[1] * a.u[1])) + Math.abs(b.hd * (b.n[0] * a.u[0] + b.n[1] * a.u[1]));
-    var s2 = a.hd + Math.abs(b.hl * (b.u[0] * a.n[0] + b.u[1] * a.n[1])) + Math.abs(b.hd * (b.n[0] * a.n[0] + b.n[1] * a.n[1]));
-    if (p1 < s1 + 3 && p2 < s2 + 3) par[root(i)] = root(j);
-  }); });
-  var bench = desks.map(function (_, i) { return root(i); }), bsize = {};
-  bench.forEach(function (b) { bsize[b] = (bsize[b] || 0) + 1; });
-  function cell(x, y) { var cx = Math.floor(x / C), cy = Math.floor(y / C); return cx < 0 || cy < 0 || cx >= cols || cy >= rows ? -1 : cy * cols + cx; }
-  // walk from p along dir: O = opaque (hatched wall / column / outside the facade), T = a plain line parallel to `par`,
-  // D = another desk, N = nothing within d1
-  function cast(p, dir, d0, d1, parv, own, inkFrom, strict) {
-    for (var d = d0; d <= d1; d += 1) {
-      var k = cell(p[0] + dir[0] * d, p[1] + dir[1] * d);
-      if (k < 0 || G.out[k]) return { k: 'O', d: d, w: 'out' };
-      if (G.hat[k] && (strict || !G.col[k])) return { k: 'O', d: d, w: G.col[k] ? 'column' : 'hatch' };
-      if (dm[k] && bench[dm[k] - 1] !== own) return { k: 'D', d: d, s: dm[k] };
-      if (dm[k]) continue;
-      var li = G.lin[k];
-      if (li >= 0) {
-        var s = G.S[li], sx = s[2] - s[0], sy = s[3] - s[1], sl = Math.sqrt(sx * sx + sy * sy);
-        if (Math.abs((sx * parv[0] + sy * parv[1]) / sl) > 0.9) {
-          for (var e = d + 1; e <= d + 40; e += 1) { var k2 = cell(p[0] + dir[0] * e, p[1] + dir[1] * e); if (k2 < 0 || G.out[k2]) return { k: 'O', d: d, w: 'facade' }; if (G.hat[k2] && !G.col[k2]) return { k: 'O', d: d, w: 'wall' }; }
-          return { k: 'T', d: d };
-        }
-      }
-      if (inkFrom !== undefined && d >= inkFrom && G.ink[k]) {
-        for (var e2 = d + 1; e2 <= d + (strict ? 60 : 45); e2 += 1) { var k3 = cell(p[0] + dir[0] * e2, p[1] + dir[1] * e2); if (k3 < 0 || G.out[k3]) return { k: 'O', d: d, w: 'facade' }; if (G.hat[k3] && (strict || !G.col[k3])) return { k: 'O', d: d, w: 'wall' }; }
-        if (strict) return { k: 'T', d: d, w: 'ink' };
-      }
-    }
-    return { k: 'N', d: d1 };
-  }
-  return { F: F, CH: CH, bench: bench, bsize: bsize, cast: cast, dm: dm, cell: cell, setBench: function (b) { bench = b; } };
-}
-function oshDecide(desks, ang, G, chairs) {
-  var X = oshFeatures(desks, ang, G, chairs), F = X.F, U = 72 / 2.54 / 50, BACK = 240 * U, END = 520 * U, res = {};
-  // benches again with a 6-unit gap (back-to-back desks are often drawn a panel apart)
-  var par = desks.map(function (_, i) { return i; });
-  function root(i) { while (par[i] !== i) i = par[i] = par[par[i]]; return i; }
-  F.forEach(function (a, i) { F.forEach(function (b, j) {
-    if (j >= i || Math.abs((ang[i] || 0) - (ang[j] || 0)) > 1) return;
-    var dx = b.c[0] - a.c[0], dy = b.c[1] - a.c[1];
-    var p1 = Math.abs(dx * a.u[0] + dy * a.u[1]), p2 = Math.abs(dx * a.n[0] + dy * a.n[1]);
-    var s1 = a.hl + Math.abs(b.hl * (b.u[0] * a.u[0] + b.u[1] * a.u[1])) + Math.abs(b.hd * (b.n[0] * a.u[0] + b.n[1] * a.u[1]));
-    var s2 = a.hd + Math.abs(b.hl * (b.u[0] * a.n[0] + b.u[1] * a.n[1])) + Math.abs(b.hd * (b.n[0] * a.n[0] + b.n[1] * a.n[1]));
-    if (p1 < s1 + 6 && p2 < s2 + 6) par[root(i)] = root(j);
-  }); });
-  var bench = desks.map(function (_, i) { return root(i); }), size = {};
-  bench.forEach(function (b) { size[b] = (size[b] || 0) + 1; });
-  X.setBench(bench);
-  function hit(p, dir, d0, d1, pv, i, inkFrom, strict) { return X.cast(p, dir, d0, d1, pv, bench[i], inkFrom, strict); }
-  desks.forEach(function (d, i) {
-    var f = F[i]; if (size[bench[i]] < 2 || !X.CH[i]) return;
-    var e = [f.c[0] + f.n[0] * f.hd, f.c[1] + f.n[1] * f.hd];
-    // 1. behind the chair: opaque (wall, facade), or a plain thin line (unclear), with nobody seated behind
-    var kinds = [-0.6, 0, 0.6].map(function (t) { return hit([e[0] + f.u[0] * f.hl * t, e[1] + f.u[1] * f.hl * t], f.n, 4, BACK, f.u, i, 45).k; });
-    if (kinds.some(function (k) { return k === 'N' || k === 'D'; })) return;
-    var thin = kinds.filter(function (k) { return k === 'T'; }).length >= 2;   // one ray through a door gap is not a glass wall
-    // 2. the bench ends: an end with no desk of the bench next to it must face a wall, a column or the facade (seen along
-    // either long edge), never only a passage, a glass front or another bench
-    var open = [1, -1].some(function (sg) {
-      var dir = [f.u[0] * sg, f.u[1] * sg], p = [f.c[0] + dir[0] * f.hl, f.c[1] + dir[1] * f.hl];
-      var k = X.cell(p[0] + dir[0] * 4, p[1] + dir[1] * 4);
-      if (k >= 0 && X.dm[k] && bench[X.dm[k] - 1] === bench[i]) return false;
-      return [-0.5, 0.5].every(function (t) { return hit([p[0] + f.n[0] * f.hd * t, p[1] + f.n[1] * f.hd * t], dir, 8, END, f.n, i, 8, true).k !== 'O'; });
-    });
-    if (open) return;
-    res[i] = { thin: thin, row: bench[i] + '|' + Math.round(f.n[0] * 10) + '|' + Math.round(f.n[1] * 10) };
-  });
-  // a row of a bench behind a partly unclear wall: the whole row gets the one question
-  var rowThin = {};
-  Object.keys(res).forEach(function (i) { if (res[i].thin) rowThin[res[i].row] = 1; });
-  var osh = [], ask = {};
-  Object.keys(res).forEach(function (i) {
-    var r = res[i];
-    if (rowThin[r.row]) { if (ASK_TRANSPARENT) (ask[r.row] = ask[r.row] || []).push(+i); } else osh.push(+i + 1);
-  });
-  var q = Object.keys(ask).map(function (k) {
-    var ids = ask[k].sort(function (a, b) { return a - b; }), x = 0, y = 0;
-    ids.forEach(function (i) { var f = F[i]; x += f.c[0] + f.n[0] * (f.hd + 60 * U); y += f.c[1] + f.n[1] * (f.hd + 60 * U); });
-    return { seats: ids.map(function (i) { return i + 1; }), at: [Math.round(x / ids.length), Math.round(y / ids.length)] };
-  });
-  return { osh: osh.sort(function (a, b) { return a - b; }), ask: q };
-}
-// OSH seats of a layout from its PDF page: { osh: [seat numbers], ask: [{ seats, at }] } (f = layout units per page point)
-function oshFromPage(lib, page, f, desks, ang, chairs) {
-  return pdfInk(lib, page).then(function (r) {
-    return oshDecide(desks, ang || [], oshGrid(r.segs, f || 1, r.w, r.h), chairs);
-  });
-}
-// the questions as red flags on the plan; answers already given to the same seats are kept
-function oshFlags(old, ask) {
-  var keep = (Array.isArray(old) ? old : []).filter(function (f) { return f && f.q !== 'transparent'; });
-  if (!ASK_TRANSPARENT) return keep;   // the question is paused: note flags only
-  var prev = (Array.isArray(old) ? old : []).filter(function (f) { return f && f.q === 'transparent' && f.ans; });
-  return keep.concat(ask.map(function (a) {
-    var key = a.seats.join(','), was = prev.filter(function (f) { return (f.seats || []).join(',') === key; })[0];
-    return { q: 'transparent', seats: a.seats, at: a.at, n: seatRange(a.seats), text: 'Transparent?', ans: was ? was.ans : null };
-  }));
-}
-function seatRange(s) {
-  var out = [], i = 0;
-  while (i < s.length) { var j = i; while (j + 1 < s.length && s[j + 1] === s[j] + 1) j++; out.push(j > i + 1 ? s[i] + '–' + s[j] : j === i + 1 ? s[i] + ', ' + s[j] : String(s[i])); i = j + 1; }
-  return out.join(', ');
-}
-// layouts read with an older OSH rule (or before OSH existed): read their OSH desks again from the stored PDF, once
-function backfillOsh(db) {
-  if (!LAYOUT || !LAYOUT.asIs || (LAYOUT.oshv || 0) >= OSH_V || !LAYOUT.desks || !LAYOUT.desks.length || !db) return;
-  return db.collection('layouts').get().then(function (snap) {
-    var recs = snap.docs.map(function (d) { return d.data(); }).filter(function (r) { return r && r.asset && /[.]pdf$/i.test(r.name || ''); })
-      .sort(function (a, b) { return String(b.at || '').localeCompare(String(a.at || '')); });
-    if (!recs.length) return;
-    var url = '/_blob/' + recs[0].asset; if (window.__blobUrl) url = window.__blobUrl(url);
-    var lib;
-    return loadPdf().then(function (l) { lib = l; return fetch(url); }).then(function (r) { if (!r.ok) throw { code: 'fetch' }; return r.arrayBuffer(); })
-      .then(function (buf) { return lib.getDocument({ data: new Uint8Array(buf) }).promise; })
-      .then(function (pdf) { return pdf.getPage(1); })
-      .then(function (pg) { return oshFromPage(lib, pg, LAYOUT.pscale || 1, LAYOUT.desks, LAYOUT.ang, LAYOUT.chairs); })
-      .then(function (res) {
-        LAYOUT.osh = res.osh; LAYOUT.oshv = OSH_V; LAYOUT.flags = oshFlags(LAYOUT.flags, res.ask); OSH_REV++;
-        drawFlags(LAYOUT);
-        if (window.__oshReady) window.__oshReady();
-        return db.doc('plan/current').update({ osh: res.osh, oshv: OSH_V, flags: LAYOUT.flags });
-      });
-  }).catch(function () {});
-}
-// ---- C3 element inventory (set by the user 25 Nov 2026, version 1): on the first analysis of a layout, every C2 element
-// in C3 order: on the layout or not, where, how many. Read from the PDF: paths (lines, curves, fills) and text (labels,
-// furniture tags and their legend). Never a guess: what cannot be read reliably is "not detected yet" (nd), never "no".
-var EL_V = 1;
 // one pass over the page: every path (polylines in page points, its fill / stroke colour, door-swing arcs) and every text item
 function elRead(lib, page) {
   var vp = page.getViewport({ scale: 1 });
@@ -1839,504 +1190,106 @@ function elArc(a, m, b, q) {
   var t0 = Math.atan2(ay - uy, ax - ux), t1 = Math.atan2(cy - uy, cx - ux), sp = Math.abs(t1 - t0); if (sp > Math.PI) sp = 2 * Math.PI - sp;
   return { c: [ux, uy], r: r, s: a, e: b, span: sp * 180 / Math.PI };
 }
-// the drawing rasterised at 20 cells per metre (black and grey lines and fills; coloured annotations, the boxes round
-// tags and room numbers, and lines across the whole sheet left out), then the free space split into connected areas:
-// a closed room is an area of 1.5–100 m² inside the building; bigger ones are open space. f = layout units per page point.
-function elSpaces(R, f) {
-  var mU = 72 / 2.54 * 100 / 50 / (f || 1), s = 20 / mU, W = Math.ceil(R.w * s) + 2, H = Math.ceil(R.h * s) + 2;
-  if (W * H > 9e6) { s *= Math.sqrt(9e6 / (W * H)); W = Math.ceil(R.w * s) + 2; H = Math.ceil(R.h * s) + 2; }
-  var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-  var x = cv.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, W, H); x.lineWidth = 1; x.strokeStyle = '#000'; x.fillStyle = '#000';
-  function plain(c) { return c && Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]) <= 60 && Math.max(c[0], c[1], c[2]) < 235; }
-  var boxes = R.text.map(function (t) { return [t.x0, t.y - t.fs, t.x1, t.y]; });
-  function aroundText(b) {
-    if (b[2] - b[0] > 4 * mU / 10 * 6 || b[3] - b[1] > mU * 0.6) return false;
-    return boxes.some(function (t) { return t[0] >= b[0] - 2 && t[2] <= b[2] + 2 && t[1] >= b[1] - 2 && t[3] <= b[3] + 2; });
-  }
-  // dimension lines: a single straight line with a number written along its middle (they cut rooms in two)
-  var nums = R.text.filter(function (t) { return /^\d{1,4}([.,]\d)?$/.test(t.s); }).map(function (t) { return { c: [(t.x0 + t.x1) / 2, t.y - t.fs / 2], fs: t.fs }; })
-    .concat(R.rot.filter(function (t) { return /^\d{1,4}([.,]\d)?$/.test(t.s); }));
-  var nb = {}; nums.forEach(function (n) { var k = Math.floor(n.c[0] / 50) + '|' + Math.floor(n.c[1] / 50); (nb[k] = nb[k] || []).push(n); });
-  function dimLine(p) {
-    if (p.lines.length !== 1 || p.lines[0].length !== 4 || p.fill) return false;
-    var l = p.lines[0], dx = l[2] - l[0], dy = l[3] - l[1], L = Math.hypot(dx, dy); if (L < 0.25 * mU) return false;
-    var hit = false;
-    for (var gx = Math.floor(Math.min(l[0], l[2]) / 50) - 1; gx <= Math.floor(Math.max(l[0], l[2]) / 50) + 1 && !hit; gx++)
-      for (var gy = Math.floor(Math.min(l[1], l[3]) / 50) - 1; gy <= Math.floor(Math.max(l[1], l[3]) / 50) + 1 && !hit; gy++)
-        (nb[gx + '|' + gy] || []).forEach(function (n) {
-          var t = ((n.c[0] - l[0]) * dx + (n.c[1] - l[1]) * dy) / (L * L), d = Math.abs((n.c[0] - l[0]) * dy - (n.c[1] - l[1]) * dx) / L;
-          if (t > 0.2 && t < 0.8 && d < 1.1 * n.fs) hit = true;
-        });
-    return hit;
-  }
-  R.paths.forEach(function (p) {
-    if (dimLine(p)) return;
-    var b = p.b; if (b[2] - b[0] > 0.85 * R.w || b[3] - b[1] > 0.85 * R.h) return;
-    var st = plain(p.stroke), fi = plain(p.fill); if (!st && !fi) return;
-    if (aroundText(b)) return;
-    x.beginPath();
-    p.lines.forEach(function (l) {
-      if ((Math.abs(l[0]) < 2 && Math.abs(l[1]) < 2) || (Math.abs(l[l.length - 2]) < 2 && Math.abs(l[l.length - 1]) < 2)) return;
-      x.moveTo(l[0] * s, l[1] * s); for (var q = 2; q < l.length; q += 2) x.lineTo(l[q] * s, l[q + 1] * s);
-    });
-    if (fi) x.fill(); if (st || fi) x.stroke();
+// the plan picture: the building area, grayscale, light greys to white, a few grey levels (small PNG)
+function planPicture(page, E, pf, asIs) {
+  var W = E[2] - E[0], H = E[3] - E[1], S = Math.min(1.5, Math.sqrt(14e6 / (W * H)));
+  var vp = page.getViewport({ scale: S * (pf || 1), offsetX: -E[0] * S, offsetY: -E[1] * S });
+  var c = document.createElement('canvas'); c.width = Math.round(W * S); c.height = Math.round(H * S);
+  var ctx = c.getContext('2d'); ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, c.width, c.height);
+  return page.render({ canvasContext: ctx, viewport: vp }).promise.then(function () {
+    if (asIs) return new Promise(function (ok, bad) { c.toBlob(function (b) { if (b) ok(b); else bad({ code: 'png' }); }, 'image/png'); });
+    var im = ctx.getImageData(0, 0, c.width, c.height), d = im.data;
+    for (var i = 0; i < d.length; i += 4) { var v = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; v = v > 235 ? 255 : Math.round(v / 51) * 51; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
+    ctx.putImageData(im, 0, 0);
+    return new Promise(function (ok, bad) { c.toBlob(function (b) { if (b) ok(b); else bad({ code: 'png' }); }, 'image/png'); });
   });
-  var px = x.getImageData(0, 0, W, H).data, N = W * H, ink = new Uint8Array(N);
-  for (var i = 0; i < N; i++) if (px[i * 4] < 200) ink[i] = 1;
-  // label the free cells (4-connected)
-  var lab = new Int32Array(N), q = new Int32Array(N), comps = [{}];
-  for (var k = 0; k < N; k++) {
-    if (ink[k] || lab[k]) continue;
-    var id = comps.length, qh = 0, qt = 0, n = 0, b0 = [1e9, 1e9, -1, -1], edge = false; lab[k] = id; q[qt++] = k;
-    while (qh < qt) {
-      var c = q[qh++], cx = c % W, cy = (c / W) | 0; n++;
-      if (cx < b0[0]) b0[0] = cx; if (cx > b0[2]) b0[2] = cx; if (cy < b0[1]) b0[1] = cy; if (cy > b0[3]) b0[3] = cy;
-      if (cx === 0 || cy === 0 || cx === W - 1 || cy === H - 1) edge = true;
-      if (cx > 0 && !ink[c - 1] && !lab[c - 1]) { lab[c - 1] = id; q[qt++] = c - 1; }
-      if (cx < W - 1 && !ink[c + 1] && !lab[c + 1]) { lab[c + 1] = id; q[qt++] = c + 1; }
-      if (c >= W && !ink[c - W] && !lab[c - W]) { lab[c - W] = id; q[qt++] = c - W; }
-      if (c < N - W && !ink[c + W] && !lab[c + W]) { lab[c + W] = id; q[qt++] = c + W; }
-    }
-    comps.push({ id: id, a: n / 400, b: [b0[0] / s, b0[1] / s, (b0[2] + 1) / s, (b0[3] + 1) / s], out: edge });
-  }
-  // the building: the biggest block of drawing not reached from the sheet's edge
-  var blk = new Int32Array(N), best = null;
-  for (var k2 = 0; k2 < N; k2++) {
-    if (blk[k2] || (lab[k2] && comps[lab[k2]].out)) continue;
-    var qh2 = 0, qt2 = 0, n2 = 0, bb = [1e9, 1e9, -1, -1]; blk[k2] = 1; q[qt2++] = k2;
-    while (qh2 < qt2) {
-      var c2 = q[qh2++], x2 = c2 % W, y2 = (c2 / W) | 0; n2++;
-      if (x2 < bb[0]) bb[0] = x2; if (x2 > bb[2]) bb[2] = x2; if (y2 < bb[1]) bb[1] = y2; if (y2 > bb[3]) bb[3] = y2;
-      [x2 > 0 ? c2 - 1 : -1, x2 < W - 1 ? c2 + 1 : -1, c2 >= W ? c2 - W : -1, c2 < N - W ? c2 + W : -1].forEach(function (nb) {
-        if (nb < 0 || blk[nb] || (lab[nb] && comps[lab[nb]].out)) return; blk[nb] = 1; q[qt2++] = nb;
+}
+// The raw reading of a page, as the brain wants it. want = { A, texts, ink, el } (truthy = include):
+//   A     straight segments 5-400 pt [ax, ay, bx, by]      texts  the page's text strings that hold digits
+//   ink   { segs, w, h } (pdfInk)                           el     { paths, text, rot, w, h } (elRead)
+function pageRaw(lib, page, want) {
+  var vp = page.getViewport({ scale: 1 }), out = {}, jobs = [];
+  if (want.A) jobs.push(pdfSegments(lib, page, vp, 5, 400).then(function (r) { out.A = r.A; }));
+  if (want.texts) jobs.push(page.getTextContent().then(function (tc) { out.texts = tc.items.map(function (it) { return it.str || ''; }).filter(function (t) { return /\d/.test(t); }); }, function () { out.texts = []; }));
+  if (want.ink) jobs.push(pdfInk(lib, page).then(function (r) { out.ink = r; }));
+  if (want.el) jobs.push(elRead(lib, page).then(function (r) { out.el = r; }, function () {}));
+  return Promise.all(jobs).then(function () { return out; });
+}
+// Ask the brain: op = 'layout' | 'desks' | 'osh' | 'elements' | …; raw = a raw reading (its numbers are sent rounded
+// to 0.01 pt), more = small exact values (desks, scale, names). Resolves with the answer; rejects with { code: 'nobrain' }
+// where there is no server (the preview artifact) or { code: 'brain', status } when the server fails.
+function brain(op, raw, more) {
+  if (!window.__edenBrain) return Promise.reject({ code: 'nobrain' });
+  var body = '{"raw":' + JSON.stringify(raw || {}, function (k, v) { return typeof v === 'number' ? Math.round(v * 100) / 100 : v; }) + ',"more":' + JSON.stringify(more || {}) + '}';
+  return window.__edenBrain(op, body);
+}
+// a new layout from a raw reading: one trip, or three smaller ones when the drawing is too heavy for one
+function readLayout(raw, name) {
+  return brain('layout', raw, { name: name }).catch(function (e) {
+    if (!e || e.code !== 'brain' || e.status < 500) throw e;
+    var L;
+    return brain('desks', { A: raw.A, texts: raw.texts, ink: raw.ink }, { name: name }).then(function (r) {
+      if (r.error) return r;
+      L = r.L;
+      return brain('osh', { ink: raw.ink }, { f: L.pscale, desks: L.desks, ang: L.ang, chairs: L.chairs }).then(function (o) { L.osh = o.osh; L.oshv = o.oshv; L.ask = o.ask; }, function () { L.osh = []; })
+        .then(function () { return brain('elements', { el: raw.el, ink: raw.ink }, { L: { desks: L.desks, ang: L.ang, chairs: L.chairs, osh: L.osh }, f: L.pscale }).then(function (E) { L.elements = E; L.elv = EL_V; }, function () {}); })
+        .then(function () { return { L: L }; });
+    });
+  });
+}
+// ---- OSH = open space hidden (rules C2 23-25). Which seats are OSH is decided by the brain (server) from the drawing;
+// this page keeps the answer (L.osh), the question flags and the re-check of layouts read with older rules.
+// OSH_V = the version of the OSH rules (the same number as on the server: raise both together); stored layouts with a
+// lower oshv are read again once. ASK_TRANSPARENT: the "Transparent? y / n" question (C2 rule 24), paused by the user.
+var OSH_V = 3, OSH_REV = 0, ASK_TRANSPARENT = false;
+// OSH seats of a layout from its PDF page: { osh: [seat numbers], ask: [{ seats, at }] } (f = layout units per page point)
+function oshFromPage(lib, page, f, desks, ang, chairs) {
+  return pageRaw(lib, page, { ink: 1 }).then(function (raw) { return brain('osh', raw, { f: f || 1, desks: desks, ang: ang || [], chairs: chairs }); });
+}
+// the questions as red flags on the plan; answers already given to the same seats are kept
+function oshFlags(old, ask) {
+  var keep = (Array.isArray(old) ? old : []).filter(function (f) { return f && f.q !== 'transparent'; });
+  if (!ASK_TRANSPARENT) return keep;   // the question is paused: note flags only
+  var prev = (Array.isArray(old) ? old : []).filter(function (f) { return f && f.q === 'transparent' && f.ans; });
+  return keep.concat(ask.map(function (a) {
+    var key = a.seats.join(','), was = prev.filter(function (f) { return (f.seats || []).join(',') === key; })[0];
+    return { q: 'transparent', seats: a.seats, at: a.at, n: seatRange(a.seats), text: 'Transparent?', ans: was ? was.ans : null };
+  }));
+}
+function seatRange(s) {
+  var out = [], i = 0;
+  while (i < s.length) { var j = i; while (j + 1 < s.length && s[j + 1] === s[j] + 1) j++; out.push(j > i + 1 ? s[i] + '–' + s[j] : j === i + 1 ? s[i] + ', ' + s[j] : String(s[i])); i = j + 1; }
+  return out.join(', ');
+}
+// layouts read with an older OSH rule (or before OSH existed): read their OSH desks again from the stored PDF, once
+function backfillOsh(db) {
+  if (!LAYOUT || !LAYOUT.asIs || (LAYOUT.oshv || 0) >= OSH_V || !LAYOUT.desks || !LAYOUT.desks.length || !db) return;
+  return db.collection('layouts').get().then(function (snap) {
+    var recs = snap.docs.map(function (d) { return d.data(); }).filter(function (r) { return r && r.asset && /[.]pdf$/i.test(r.name || ''); })
+      .sort(function (a, b) { return String(b.at || '').localeCompare(String(a.at || '')); });
+    if (!recs.length) return;
+    var url = '/_blob/' + recs[0].asset; if (window.__blobUrl) url = window.__blobUrl(url);
+    var lib;
+    return loadPdf().then(function (l) { lib = l; return fetch(url); }).then(function (r) { if (!r.ok) throw { code: 'fetch' }; return r.arrayBuffer(); })
+      .then(function (buf) { return lib.getDocument({ data: new Uint8Array(buf) }).promise; })
+      .then(function (pdf) { return pdf.getPage(1); })
+      .then(function (pg) { return oshFromPage(lib, pg, LAYOUT.pscale || 1, LAYOUT.desks, LAYOUT.ang, LAYOUT.chairs); })
+      .then(function (res) {
+        LAYOUT.osh = res.osh; LAYOUT.oshv = OSH_V; LAYOUT.flags = oshFlags(LAYOUT.flags, res.ask); OSH_REV++;
+        drawFlags(LAYOUT);
+        if (window.__oshReady) window.__oshReady();
+        return db.doc('plan/current').update({ osh: res.osh, oshv: OSH_V, flags: LAYOUT.flags });
       });
-    }
-    if (!best || n2 > best.n) best = { n: n2, b: [bb[0] / s, bb[1] / s, (bb[2] + 1) / s, (bb[3] + 1) / s] };
-  }
-  return { s: s, W: W, H: H, mU: mU, lab: lab, ink: ink, comps: comps, bld: best ? best.b : [0, 0, R.w, R.h] };
+  }).catch(function () {});
 }
-// text items joined into labels (same line, same size, side by side); Hebrew labels read right to left
-function elLabels(T) {
-  var it = T.slice().sort(function (a, b) { return a.y - b.y || a.x0 - b.x0; }), used = [], out = [];
-  it.forEach(function (a, i) {
-    if (used[i]) return; used[i] = 1; var g = [a], grew = true;
-    while (grew) {
-      grew = false;
-      for (var j = i + 1; j < it.length; j++) {
-        var q = it[j]; if (used[j]) continue; if (q.y - a.y > a.fs) break;
-        if (g.some(function (p) { return p.s === q.s && Math.abs(p.x0 - q.x0) < 1 && Math.abs(p.y - q.y) < 1; })) { used[j] = 1; continue; }   // the same text drawn twice
-        if (g.some(function (p) { return Math.abs(q.y - p.y) < 0.15 * p.fs && Math.abs(q.fs - p.fs) < 0.6 && (Math.abs(q.x0 - p.x1) < 0.8 * p.fs || Math.abs(p.x0 - q.x1) < 0.8 * p.fs); })) { g.push(q); used[j] = 1; grew = true; }
-      }
-    }
-    var heb = g.some(function (p) { return /[֐-׿]/.test(p.s); });
-    g.sort(function (p, q) { return heb ? q.x0 - p.x0 : p.x0 - q.x0; });
-    var x0 = Math.min.apply(null, g.map(function (p) { return p.x0; })), x1 = Math.max.apply(null, g.map(function (p) { return p.x1; }));
-    out.push({ s: g.map(function (p) { return p.s; }).join(' ').replace(/\s+/g, ' '), x0: x0, x1: x1, y0: a.y - a.fs, y1: a.y, fs: a.fs, c: [(x0 + x1) / 2, a.y - a.fs / 2], items: g });
-  });
-  return out;
-}
-// furniture tags (WS01, FR12, N 07…) and the legend that names them: a tag with a description on its own row
-// (furniture list) is a legend row; every other copy of that tag is a piece of furniture on the plan
-var EL_TAG = /^[A-Z]{1,3}-?\d{1,3}(\.\d)?$/;
-function elTags(T) {
-  var out = [], used = {};
-  T.forEach(function (t, i) {
-    if (EL_TAG.test(t.s)) { out.push({ s: t.s.replace('-', ''), c: [(t.x0 + t.x1) / 2, t.y - t.fs / 2], t: t }); return; }
-    if (/^[A-Z]{1,3}$/.test(t.s)) T.forEach(function (u, j) {
-      if (used[j] || j === i || !/^\d{1,3}(\.\d)?$/.test(u.s) || Math.abs(u.y - t.y) > 0.15 * t.fs || Math.abs(u.fs - t.fs) > 0.5 || u.x0 - t.x1 > 0.6 * t.fs || u.x0 < t.x0) return;
-      used[j] = 1; out.push({ s: t.s + u.s, c: [(t.x0 + u.x1) / 2, t.y - t.fs / 2], t: t });
-    });
-  });
-  var legend = {}, rows = [];
-  out.forEach(function (g) {
-    var row = T.filter(function (u) { return u !== g.t && Math.abs(u.y - g.t.y) < 0.2 * g.t.fs && Math.abs(u.fs - g.t.fs) < 0.6 && Math.abs((u.x0 + u.x1) / 2 - g.c[0]) < 25 * g.t.fs && /[A-Za-z֐-׿]{2}/.test(u.s) && !EL_TAG.test(u.s); });
-    if (!row.length) return;
-    var heb = row.some(function (p) { return /[֐-׿]/.test(p.s); });
-    row.sort(function (p, q) { return heb ? q.x0 - p.x0 : p.x0 - q.x0; });
-    var d = row.map(function (p) { return p.s; }).join(' ').replace(/\s+/g, ' ');
-    if (d.length < 3) return;
-    g.leg = true; if (!legend[g.s]) legend[g.s] = d; rows.push(g);
-  });
-  return { legend: legend, on: out.filter(function (g) { return !g.leg && legend[g.s]; }), all: out };
-}
-// what a legend description names (Hebrew or English): chairs first ("chair for worker + manager + reception" is a chair)
-function elKind(d) {
-  d = String(d || '').toLowerCase();
-  if (/כסא|כיסא|chair|שרפרף|stool/.test(d) && !/כורס/.test(d)) {
-    if (/שרפרף|stool|בר(\s|$)/.test(d)) return 'stool';
-    if (/ישיבות|בורד|board|meeting|conference/.test(d)) return 'mchair';
-    if (/קפיטריה|cafeteria|dining|אוכל/.test(d)) return 'dchair';
-    if (/לאונג|lounge/.test(d)) return 'arm';
-    if (/אורח|guest|visitor/.test(d)) return 'gchair';
-    return 'wchair';
-  }
-  if (/ספה|sofa|couch/.test(d)) return 'sofa';
-  if (/כורס|armchair|lounge chair|פוף|pouf/.test(d)) return 'arm';
-  if (/ספסל|bench/.test(d) && /ישיבות|meeting|board|בורד/.test(d)) return 'mbench';
-  if (/שולחן|table|desk/.test(d)) {
-    if (/ישיבות|בורד|board|meeting|conference|אחד על אחד/.test(d)) return 'mtable';
-    if (/קפיטריה|cafeteria|dining|אוכל/.test(d)) return 'dtable';
-    if (/קפה|coffee|side|צד|לאונג|lounge/.test(d)) return 'ctable';
-    if (/מנהל|manager|executive|director/.test(d)) return 'mdesk';
-    if (/עובד|עבודה|workstation|desk/.test(d)) return 'desk';
-    return 'table';
-  }
-  if (/דלפק\s*קבלה|קבלה|reception|front desk/.test(d)) return 'reception';
-  if (/(^|\s)אי(\s|$)|island|bar counter/.test(d)) return 'island';
-  if (/מטבח|kitchen|כיור|sink/.test(d)) return 'kitchen';
-  if (/מדפסת|printer/.test(d)) return 'printer';
-  return 'other';
-}
-// the C3 rows, in order (sections 1–6, every sub-item): id, section, name
-var EL_ROWS = [
-  ['1a', 1, 'Elevators / main entrance'], ['1b', 1, 'Entrances (incl. fire stairs, side doors)'], ['1c', 1, 'Facade (exterior glass wall)'], ['1d', 1, 'Cement core'], ['1e', 1, 'Columns'],
-  ['2a', 2, 'Gypsum walls'], ['2b', 2, 'Interior glass walls'], ['2c', 2, 'Doors (incl. glass doors)'],
-  ['3a', 3, 'Reception + waiting area'], ['3b', 3, 'Cafeteria'], ['3b.1', 3, 'Cafeteria island / bar counter'], ['3b.2', 3, 'Dining tables'], ['3b.3', 3, 'Dining chairs'], ['3b.4', 3, 'Side / coffee tables'],
-  ['3c', 3, 'Lounges'], ['3d', 3, 'Big meeting rooms (13–50)'], ['3e', 3, 'Mid meeting rooms (7–12)'], ['3f', 3, 'Small meeting rooms (2–6)'], ['3g', 3, 'Lounge meeting rooms'], ['3h', 3, 'Meeting rooms in the open space'], ['3i', 3, 'Printer stations'],
-  ['4a', 4, 'Corridors'], ['4b', 4, 'Main corridors'], ['4c', 4, 'Secondary corridors'], ['4d', 4, 'Movement / privacy hierarchy'], ['4e', 4, 'Unclear thin walls'],
-  ['5a', 5, 'Manager rooms (M)'], ['5b', 5, 'Single rooms (S)'], ['5c', 5, 'Rooms for N (R2–R10)'], ['5d', 5, 'C-level rooms (C)'],
-  ['6a', 6, 'Open-space benches (OS)'], ['6b', 6, 'Open space hidden (OSH)'], ['6c', 6, 'Benches at an angle']
-];
+// ---- C3 element inventory (set by the user 25 Nov 2026): every C2 element in C3 order: on the layout or not, where,
+// how many. Worked out by the brain (server) from the drawing; this page keeps and shows the answer (L.elements).
+// EL_V = the version of the inventory rules (the same number as on the server: raise both together).
+var EL_V = 1;
 var EL_SECTIONS = ['', 'Entrances, shell and core', 'Interior walls and doors', 'Public spaces', 'Corridors', 'Room types', 'Open-space desks'];
-// R: elRead; L: the layout (desks, chairs, ang, osh in layout units); f: layout units per page point; ink: pdfInk result
-function elInventory(R, L, f, ink) {
-  f = f || 1;
-  var S = elSpaces(R, f), mU = S.mU, rows = {}, BL = S.bld, W = BL[2] - BL[0], H = BL[3] - BL[1];
-  function inB(c, pad) { pad = pad || 0; return c[0] > BL[0] - pad && c[0] < BL[2] + pad && c[1] > BL[1] - pad && c[1] < BL[3] + pad; }
-  function zone(c) {
-    var fx = (c[0] - BL[0]) / W, fy = (c[1] - BL[1]) / H, v = fy < 0.3 ? 'N' : fy > 0.7 ? 'S' : '', h = fx < 0.3 ? 'W' : fx > 0.7 ? 'E' : '';
-    return v + h || 'centre';
-  }
-  function ctr(b) { return [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]; }
-  function ub(a, b) { return a ? [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])] : b.slice(); }
-  function grow(b, d) { return [b[0] - d, b[1] - d, b[2] + d, b[3] + d]; }
-  function out(b) { return b.map(function (v) { return Math.round(v * f); }); }   // plan units
-  function zones(list) { var z = []; list.forEach(function (b) { var k = zone(ctr(b)); if (z.indexOf(k) < 0) z.push(k); }); return z.join(', '); }
-  function put(id, found, n, loc, boxes, note) { rows[id] = { found: found, n: n === undefined ? null : n, loc: loc || '', boxes: (boxes || []).slice(0, 400).map(out), note: note || '' }; }
-  function nd(id, why) { put(id, 'nd', null, '', [], why); }
-  // an area that can be a room or open space: 1.5 m² or more, or 0.7 m² or more when it is not a plain rectangle (the
-  // inside of a desk or a table is a rectangle with nothing in it)
-  function ok(cp) { if (!cp || cp.out) return false; if (cp.a >= 1.5) return true; var ba = (cp.b[2] - cp.b[0]) * (cp.b[3] - cp.b[1]) * S.s * S.s / 400; return cp.a >= 0.7 && cp.a < 0.85 * ba; }
-  // the area a point belongs to: of the areas within about 0.7 m, the one with the most free cells there
-  function at(c, small) {
-    var x0 = Math.round(c[0] * S.s), y0 = Math.round(c[1] * S.s), R0 = 14, cnt = {}, best = null, bn = 0;
-    for (var dy = -R0; dy <= R0; dy++) for (var dx = -R0; dx <= R0; dx++) {
-      if (dx * dx + dy * dy > R0 * R0) continue;
-      var x = x0 + dx, y = y0 + dy; if (x < 0 || y < 0 || x >= S.W || y >= S.H) continue;
-      var id = S.lab[y * S.W + x]; if (!id) continue;
-      cnt[id] = (cnt[id] || 0) + 1;
-    }
-    // furniture tags and desks: a room or open space (1.5 m² or more) first; room numbers: any area, the tiniest rooms too
-    [true, false].forEach(function (big) {
-      if (best || (big && small)) return;
-      Object.keys(cnt).forEach(function (id) { var cp = S.comps[id]; if (ok(cp) && (!big || cp.a >= 1.5) && cnt[id] > bn) { bn = cnt[id]; best = cp; } });
-    });
-    return best;
-  }
-  function closed(cp) { return ok(cp) && cp.a <= 60; }
-  // labels on the plan (inside the building), furniture tags with their legend
-  var LB = elLabels(R.text).filter(function (l) { return inB(l.c); }), TG = elTags(R.text), tags = TG.on.filter(function (g) { return inB(g.c); });
-  tags.forEach(function (g) { g.k = elKind(TG.legend[g.s]); });
-  var hasTags = tags.length >= 10;
-  function lab(re) { return LB.filter(function (l) { return re.test(l.s); }); }
-  function tagsOf(k) { return tags.filter(function (g) { return k.indexOf(g.k) >= 0; }); }
-  function tb(g) { var t = g.t; return [t.x0 - 2, t.y - t.fs - 2, t.x1 + 2, t.y + 2]; }
-  // desks (layout units → page points), their areas
-  // a desk belongs to the area its chair is in (a desk against a wall is closer to the next room than its own centre says)
-  var CH = Array.isArray(L.chairs) && L.chairs.length === (L.desks || []).length ? L.chairs : chairsFor(L.desks || [], L.ang);
-  var D = (L.desks || []).map(function (d, i) { var b = [d[0] / f, d[1] / f, d[2] / f, d[3] / f], ch = CH[i] && isFinite(CH[i][0]) ? [CH[i][0] / f, CH[i][1] / f] : null; return { i: i, b: b, c: ctr(b), cp: at(ch || ctr(b)) }; });
-  tags.forEach(function (g) {
-    var d = (g.k === 'desk' || g.k === 'mdesk') && D.filter(function (o) { return g.c[0] > o.b[0] - 3 && g.c[0] < o.b[2] + 3 && g.c[1] > o.b[1] - 3 && g.c[1] < o.b[3] + 3; })[0];
-    g.cp = d ? d.cp : at(g.c);
-  });
-  // ---- 1. entrances, shell, core
-  // core: the biggest cluster of grey-filled walls (concrete)
-  var grey = R.paths.filter(function (p) {
-    var c = p.fill; if (!c) return false; var mx = Math.max(c[0], c[1], c[2]), mn = Math.min(c[0], c[1], c[2]);
-    return mx - mn < 40 && mx >= 60 && mx <= 200 && (p.b[2] - p.b[0]) * (p.b[3] - p.b[1]) > 0.05 * mU * mU && inB(ctr(p.b));
-  });
-  var gcl = [];
-  grey.forEach(function (p) {
-    var hit = gcl.filter(function (g) { var a = grow(g.b, 2 * mU); return p.b[0] < a[2] && p.b[2] > a[0] && p.b[1] < a[3] && p.b[3] > a[1]; });
-    var g = { b: p.b.slice(), a: (p.b[2] - p.b[0]) * (p.b[3] - p.b[1]), n: 1 };
-    hit.forEach(function (h) { g.b = ub(g.b, h.b); g.a += h.a; g.n += h.n; gcl.splice(gcl.indexOf(h), 1); });
-    gcl.push(g);
-  });
-  gcl.sort(function (a, b) { return b.a - a.a; });
-  var core = gcl[0] && gcl[0].a > 8 * mU * mU && (gcl[0].b[2] - gcl[0].b[0]) > 4 * mU && (gcl[0].b[3] - gcl[0].b[1]) > 4 * mU ? gcl[0].b : null;
-  // elevators: a label (lift, elevator, מעלית), else a row of 2+ shaft ids (H5, G10…) each alone in a square shaft of 2.5–9 m²
-  var lifts = lab(/מעלית|elevator|\blifts?\b/i).map(function (l) { return [l.x0, l.y0, l.x1, l.y1]; }), liftNote = 'labelled';
-  if (!lifts.length) {
-    var ids = R.text.filter(function (t) { return /^[A-Z]{1,2}\d{1,2}$/.test(t.s) && !TG.legend[t.s] && inB([t.x0, t.y]); }).map(function (t) {
-      var c = [(t.x0 + t.x1) / 2, t.y - t.fs / 2], cp = at(c); return { c: c, cp: cp, s: t.s };
-    }).filter(function (o) {
-      var cp = o.cp; if (!cp || cp.a < 1.5 || cp.a > 12) return false; var w = cp.b[2] - cp.b[0], h = cp.b[3] - cp.b[1];
-      return Math.max(w, h) / Math.min(w, h) < 2.2 && (!core || (o.c[0] > core[0] && o.c[0] < core[2] && o.c[1] > core[1] && o.c[1] < core[3]));
-    });
-    var seen = {}; ids = ids.filter(function (o) { if (seen[o.cp.id]) return false; seen[o.cp.id] = 1; return true; });
-    // a bank = 2+ shafts side by side (same row, 1.5–4 m apart)
-    ids = ids.filter(function (o) { return ids.some(function (p) { return p !== o && Math.abs(ctr(p.cp.b)[1] - ctr(o.cp.b)[1]) < 1.2 * mU && Math.abs(ctr(p.cp.b)[0] - ctr(o.cp.b)[0]) < 4.2 * mU; }); });
-    lifts = ids.map(function (o) { return o.cp.b; }); liftNote = 'shafts with ids';
-  }
-  var banks = [];
-  lifts.forEach(function (b) { var k = banks.filter(function (g) { return Math.abs(ctr(g)[1] - ctr(b)[1]) < 1.5 * mU && b[0] < g[2] + 3 * mU && b[2] > g[0] - 3 * mU; })[0]; if (k) banks[banks.indexOf(k)] = ub(k, b); else banks.push(b.slice()); });
-  var lobby = null;
-  if (banks.length >= 2) {
-    banks.sort(function (a, b) { return a[1] - b[1]; });
-    var a1 = banks[0], b1 = banks[banks.length - 1];
-    if (b1[1] - a1[3] > 1.5 * mU && b1[1] - a1[3] < 8 * mU) lobby = [Math.max(a1[0], b1[0]), a1[3], Math.min(a1[2], b1[2]), b1[1]];
-  }
-  if (lifts.length) put('1a', 'yes', lifts.length, zones(lifts) + ' · ' + banks.length + ' bank' + (banks.length > 1 ? 's' : '') + (lobby ? ' · main entrance = lift lobby (' + zone(ctr(lobby)) + ')' : ''), lifts.concat(lobby ? [lobby] : []), liftNote);
-  else nd('1a', 'no lift label or shaft ids found');
-  // stairs: 8+ parallel treads 0.9–1.8 m long, 0.22–0.36 m apart
-  var tr = [];
-  R.paths.forEach(function (p) { if (!p.stroke || !inB(ctr(p.b))) return; p.lines.forEach(function (l) {
-    for (var q = 0; q + 3 < l.length; q += 2) {
-      var dx = l[q + 2] - l[q], dy = l[q + 3] - l[q + 1], L0 = Math.hypot(dx, dy) / mU;
-      if (L0 < 0.85 || L0 > 1.9) continue;
-      if (Math.abs(dy) < 0.02 * Math.abs(dx)) tr.push({ o: 0, u: (l[q + 1] + l[q + 3]) / 2, a: Math.min(l[q], l[q + 2]), b: Math.max(l[q], l[q + 2]) });
-      else if (Math.abs(dx) < 0.02 * Math.abs(dy)) tr.push({ o: 1, u: (l[q] + l[q + 2]) / 2, a: Math.min(l[q + 1], l[q + 3]), b: Math.max(l[q + 1], l[q + 3]) });
-    }
-  }); });
-  var flights = [], tg2 = {};
-  tr.forEach(function (t) { var k = t.o + '|' + Math.round(t.a / 3) + '|' + Math.round(t.b / 3); (tg2[k] = tg2[k] || []).push(t); });
-  Object.keys(tg2).forEach(function (k) {
-    var g = tg2[k].sort(function (p, q) { return p.u - q.u; }), run = [g[0]];
-    for (var i = 1; i <= g.length; i++) {
-      var gap = i < g.length ? (g[i].u - run[run.length - 1].u) / mU : 0;
-      if (i < g.length && gap < 0.05) continue;
-      if (i < g.length && gap >= 0.2 && gap <= 0.38 && (run.length < 2 || Math.abs(gap - (run[1].u - run[0].u) / mU) < 0.04)) { run.push(g[i]); continue; }
-      if (run.length >= 8) { var t0 = run[0], t1 = run[run.length - 1]; flights.push(t0.o ? [t0.u, t0.a, t1.u, t0.b] : [t0.a, t0.u, t0.b, t1.u]); }
-      if (i < g.length) run = [g[i]];
-    }
-  });
-  var stairs = [];
-  flights.forEach(function (b) { var k = stairs.filter(function (s) { var a = grow(s, 1.2 * mU); return b[0] < a[2] && b[2] > a[0] && b[1] < a[3] && b[3] > a[1]; })[0]; if (k) stairs[stairs.indexOf(k)] = ub(k, b); else stairs.push(b.slice()); });
-  var ent = lab(/כניסה|entrance|entry|exit|יציאה|מילוט/i).map(function (l) { return { b: [l.x0, l.y0, l.x1, l.y1], s: l.s }; });
-  var e1 = (lobby ? 1 : 0) + ent.length + stairs.length;
-  if (e1) put('1b', 'yes', e1, [lobby ? 'main: lift lobby (' + zone(ctr(lobby)) + ')' : '', ent.map(function (e) { return e.s + ' (' + zone(ctr(e.b)) + ')'; }).join(', '), stairs.length ? stairs.length + ' stair' + (stairs.length > 1 ? 's' : '') + ' (' + zones(stairs) + ')' : ''].filter(Boolean).join(' · '),
-    (lobby ? [lobby] : []).concat(ent.map(function (e) { return e.b; }), stairs), 'labelled entrances + stairs (treads); unlabelled side doors not counted');
-  else nd('1b', 'no entrance labels or stairs found');
-  put('1c', 'yes', 1, 'outline, all sides', [BL], 'the building outline');
-  if (core) put('1d', 'yes', 1, zone(ctr(core)), [core], 'grey-filled walls'); else nd('1d', 'no grey-filled core walls found');
-  // columns: small solid squares (filled black or grey, 0.2–1.2 m), not part of the core
-  var cols = [];
-  R.paths.forEach(function (p) {
-    var c = p.fill; if (!c || Math.max(c[0], c[1], c[2]) > 200 || Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]) > 40) return;
-    var w = (p.b[2] - p.b[0]) / mU, h = (p.b[3] - p.b[1]) / mU;
-    if (w < 0.2 || h < 0.2 || w > 1.2 || h > 1.2 || Math.max(w, h) / Math.min(w, h) > 2 || !inB(ctr(p.b))) return;
-    if (core && p.b[0] > core[0] - 0.3 * mU && p.b[2] < core[2] + 0.3 * mU && p.b[1] > core[1] - 0.3 * mU && p.b[3] < core[3] + 0.3 * mU) return;
-    if (!cols.some(function (q) { return p.b[0] < q[2] && p.b[2] > q[0] && p.b[1] < q[3] && p.b[3] > q[1]; })) cols.push(p.b);
-  });
-  if (cols.length) put('1e', 'yes', cols.length, zones(cols), cols, 'solid squares 0.2–1.2 m outside the core; hatched columns not counted'); else nd('1e', 'no solid column squares found');
-  // ---- 2. walls and doors
-  var G = ink ? oshGrid(ink.segs, f, ink.w, ink.h) : null, walls = [];
-  if (G) {
-    var seenW = new Uint8Array(G.cols * G.rows);
-    for (var k0 = 0; k0 < G.cols * G.rows; k0++) {
-      if (!G.hat[k0] || G.col[k0] || seenW[k0]) continue;
-      var stk = [k0], bx = [1e9, 1e9, -1, -1], n0 = 0; seenW[k0] = 1;
-      while (stk.length) { var kk = stk.pop(), kx = kk % G.cols, ky = (kk / G.cols) | 0; n0++; bx = [Math.min(bx[0], kx), Math.min(bx[1], ky), Math.max(bx[2], kx), Math.max(bx[3], ky)];
-        [kk - 1, kk + 1, kk - G.cols, kk + G.cols].forEach(function (nb) { if (nb >= 0 && nb < seenW.length && G.hat[nb] && !G.col[nb] && !seenW[nb]) { seenW[nb] = 1; stk.push(nb); } }); }
-      var wb = [bx[0] * G.C / f, bx[1] * G.C / f, (bx[2] + 1) * G.C / f, (bx[3] + 1) * G.C / f];
-      if (Math.max(wb[2] - wb[0], wb[3] - wb[1]) > 1 * mU && inB(ctr(wb)) && !(core && ctr(wb)[0] > core[0] && ctr(wb)[0] < core[2] && ctr(wb)[1] > core[1] && ctr(wb)[1] < core[3])) walls.push(wb);
-    }
-  }
-  if (walls.length) put('2a', 'yes', null, zones(walls), walls, walls.length + ' hatched wall runs read; walls without hatch not read'); else nd('2a', 'no hatched walls found');
-  nd('2b', 'glass and opaque thin walls are not told apart yet');
-  // doors: quarter-circle swing arcs 0.55–1.3 m, drawn as one curve or as a chain of short chords (round tables, whole
-  // circles, left out); the two leaves of a double door count once
-  var sw = elSwings(R, mU).filter(function (a) { return inB(a.c); }), doors = [];
-  sw.forEach(function (s) {
-    var b = s.b, d = doors.filter(function (o) { return o.r && Math.abs(o.r - s.r) < 0.15 * s.r && Math.hypot(o.c[0] - s.c[0], o.c[1] - s.c[1]) > 1.5 * s.r && Math.hypot(o.c[0] - s.c[0], o.c[1] - s.c[1]) < 2.4 * s.r && (Math.abs(o.c[0] - s.c[0]) < 0.08 * mU || Math.abs(o.c[1] - s.c[1]) < 0.08 * mU) && b[0] < o.b[2] + 0.1 * mU && b[2] > o.b[0] - 0.1 * mU && b[1] < o.b[3] + 0.1 * mU && b[3] > o.b[1] - 0.1 * mU; })[0];
-    if (d) { d.b = ub(d.b, b); d.r = 0; } else doors.push({ b: b, c: s.c, r: s.r });
-  });
-  if (doors.length) put('2c', 'yes', doors.length, zones(doors.map(function (d) { return d.b; })), doors.map(function (d) { return d.b; }), 'swing doors (arcs); sliding doors not read');
-  else nd('2c', 'no door swings found');
-  // ---- rooms: closed areas with their desks, furniture tags and labels
-  var RM = {};
-  // a closed room is a closed area of 1.5–60 m² with a room number (boxed) or a room name, not an open-space label
-  var NUMS = elBoxed(R, mU).filter(function (n) { return inB(n.c); });
-  var ROOMW = /חדר|room|ישיבות|meeting|בורד|board|^1:1$|סמנכ|מנכ|מנהל|manager|office|משרד|קבלה|reception|קפיטריה|cafeteria|מטבח|kitchen|lounge|לאונג|שירות|toilet|ממ"?ד|מחסן|storage|\bIT\b|server|focus/i;
-  function room(cp) { if (!closed(cp)) return null; return RM[cp.id] || (RM[cp.id] = { cp: cp, b: cp.b, desks: [], tags: [], labels: [], nums: [] }); }
-  NUMS.forEach(function (n) { var r = room(at(n.c, true)); if (r) r.nums.push(n); });
-  LB.forEach(function (l) { var r = room(at(l.c)); if (r) r.labels.push(l); });
-  Object.keys(RM).forEach(function (k) { var r = RM[k]; if (r.labels.some(function (l) { return /^OS\b|open ?space|אופן ?ספייס/i.test(l.s); }) || (!r.nums.length && !r.labels.some(function (l) { return ROOMW.test(l.s); }))) delete RM[k]; });
-  function room2(cp) { return cp && RM[cp.id]; }
-  D.forEach(function (d) { var r = room2(d.cp); if (r) r.desks.push(d); });
-  tags.forEach(function (g) { var r = room2(g.cp); if (r) r.tags.push(g); });
-  var RL = Object.keys(RM).map(function (k) { return RM[k]; });
-  // desks in a room: the desk tags when the plan has furniture tags (detected desks can be meeting tables), else the desks read
-  RL.forEach(function (r) { r.nd = hasTags ? r.tags.filter(function (g) { return g.k === 'desk' || g.k === 'mdesk'; }).length : r.desks.length; r.mgr = r.tags.filter(function (g) { return g.k === 'mdesk'; }).length; });
-  function rk(r, ks) { return r.tags.filter(function (g) { return ks.indexOf(g.k) >= 0; }).length; }
-  function rname(r) {
-    var l = r.labels.filter(function (x) { return /[֐-׿A-Za-z]{2}|^1:1$/.test(x.s) && !EL_TAG.test(x.s.replace(/\s/g, '')); })[0];
-    var num = r.nums[0];
-    var t = [num ? num.s : '', l ? l.s.replace(/\s*''\s*/g, '"').replace(/\s*-\s*/g, '-') : ''].filter(Boolean).join(' ');
-    return t ? '\u2068' + t + '\u2069' : '';   // isolated, so Hebrew names keep their order in an English line
-  }
-  function rloc(list) { var o = {}; list.forEach(function (r) { var z = zone(ctr(r.b)); (o[z] = o[z] || []).push(rname(r)); }); return Object.keys(o).map(function (z) { var n = o[z].filter(Boolean); return z + (n.length ? ' (' + n.join(', ') + ')' : ''); }).join(' · '); }
-  var NONWORK = /קפיטריה|cafeteria|קבלה|reception|שירות|toilet|\bwc\b|restroom|ממ"?ד|ממד|מחסן|אחסון|storage|\bIT\b|server|חשמל|תקשורת|ניקיון|janitor|מקלחת|shower|הנקה|מטבח|kitchen/i;
-  RL.forEach(function (r) { r.nonwork = r.labels.some(function (l) { return NONWORK.test(l.s); }); });
-  // ---- 3. public spaces
-  var rec = tagsOf(['reception']), recLab = lab(/קבלה|reception|front desk/i), recB = null;
-  rec.forEach(function (g) { recB = ub(recB, tb(g)); }); recLab.forEach(function (l) { recB = ub(recB, [l.x0, l.y0, l.x1, l.y1]); });
-  var wait = recB ? tagsOf(['sofa', 'arm', 'ctable']).filter(function (g) { var c = ctr(recB); return Math.hypot(g.c[0] - c[0], g.c[1] - c[1]) < 7 * mU && !closed(g.cp); }) : [];
-  if (recB) put('3a', 'yes', 1, zone(ctr(recB)) + (lobby ? ', next to the lift lobby' : '') + (wait.length ? ' · waiting area: ' + wait.filter(function (g) { return g.k !== 'ctable'; }).length + ' lounge seats' : ''),
-    [recB].concat(wait.map(tb)), rec.length ? 'reception counter tag' + (wait.length ? ' + lounge furniture within 7 m' : '') : 'label');
-  else nd('3a', hasTags ? 'no reception counter tag or label' : 'no reception label');
-  var cafL = lab(/קפיטריה|cafeteria|dining|lunch|מטבחון|kitchenette/i), dT = tagsOf(['dtable']), dC = tagsOf(['dchair']), isl = tagsOf(['island']), kit = tagsOf(['kitchen']);
-  var cafB = null; cafL.filter(function (l) { return /קפיטריה|cafeteria|dining|lunch/i.test(l.s); }).forEach(function (l) { cafB = ub(cafB, [l.x0, l.y0, l.x1, l.y1]); });
-  dT.concat(dC, isl, kit).forEach(function (g) { cafB = ub(cafB, tb(g)); });
-  var kn = cafL.filter(function (l) { return /מטבחון|kitchenette/i.test(l.s); });
-  if (cafB) put('3b', 'yes', cafL.filter(function (l) { return /קפיטריה|cafeteria|dining|lunch/i.test(l.s); }).length ? 1 : null, zone(ctr(cafB)) + (kn.length ? ' · kitchenette ' + zones(kn.map(function (l) { return [l.x0, l.y0, l.x1, l.y1]; })) : ''), [cafB], kn.length ? 'kitchenette shown in location only' : '');
-  else nd('3b', 'no cafeteria label or dining furniture');
-  function tagRow(id, list, none, note) {
-    if (list.length) put(id, 'yes', list.length, zones(list.map(tb)), list.map(tb), note || 'furniture tags');
-    else if (hasTags) nd(id, none); else nd(id, 'no furniture tags on this plan');
-  }
-  tagRow('3b.1', isl, 'no island / bar tag');
-  tagRow('3b.2', dT, 'no dining table tag');
-  tagRow('3b.3', dC, 'no dining chair tag', 'furniture tags; never seats');
-  tagRow('3b.4', tagsOf(['ctable']), 'no side / coffee table tag');
-  // lounges: sofas / armchairs in open space, not the waiting area: groups within 3 m
-  var lg = tagsOf(['sofa', 'arm']).filter(function (g) { return !closed(g.cp) && wait.indexOf(g) < 0; }), lgc = [];
-  lg.forEach(function (g) { var b = tb(g), k = lgc.filter(function (o) { var a = grow(o, 3 * mU); return b[0] < a[2] && b[2] > a[0] && b[1] < a[3] && b[3] > a[1]; })[0]; if (k) lgc[lgc.indexOf(k)] = ub(k, b); else lgc.push(b); });
-  if (lgc.length) put('3c', 'yes', lgc.length, zones(lgc), lgc, 'sofas / armchairs in open space (not the waiting area)');
-  else nd('3c', hasTags ? 'no sofa / armchair outside rooms and the waiting area' : 'no furniture tags on this plan');
-  // meeting rooms: closed, no desk, a meeting table or meeting chairs or a meeting label; size = chairs at the table
-  var MEETL = /ישיבות|meeting|conference|board\s*room|בורד|^1:1$|focus|חדר\s*שקט/i, mt = { big: [], mid: [], small: [], lounge: [], unk: [] };
-  RL.forEach(function (r) {
-    if (r.nd || r.nonwork || r.tags.some(function (g) { return g.k === 'dtable' || g.k === 'dchair' || g.k === 'reception'; })) return;
-    var ch = rk(r, ['mchair', 'gchair', 'wchair', 'chair']), tbl = rk(r, ['mtable', 'table']), soft = rk(r, ['sofa', 'arm']), ml = r.labels.some(function (l) { return MEETL.test(l.s); });
-    if (soft && !tbl && !rk(r, ['mchair'])) { mt.lounge.push(r); return; }
-    if (!tbl && !rk(r, ['mchair']) && !ml) return;
-    r.ch = ch;
-    if (ch >= 13) mt.big.push(r); else if (ch >= 7) mt.mid.push(r); else if (ch >= 2) mt.small.push(r); else mt.unk.push(r);
-  });
-  [['3d', mt.big], ['3e', mt.mid], ['3f', mt.small]].forEach(function (p) {
-    if (p[1].length) put(p[0], 'yes', p[1].length, rloc(p[1]), p[1].map(function (r) { return r.b; }), 'chairs at the table: ' + p[1].map(function (r) { return r.ch; }).join(', '));
-    else nd(p[0], hasTags ? 'no closed room of that size found' : 'no furniture tags: chairs not counted');
-  });
-  if (mt.unk.length) { var o3 = rows['3f']; o3.note = (o3.note ? o3.note + '; ' : '') + 'size not read: ' + rloc(mt.unk) + ' (fewer than 2 chairs found)'; }
-  if (mt.lounge.length) put('3g', 'yes', mt.lounge.length, rloc(mt.lounge), mt.lounge.map(function (r) { return r.b; }), 'closed room, soft seating, no desk or meeting table');
-  else nd('3g', hasTags ? 'no closed room with soft seating only' : 'no furniture tags on this plan');
-  nd('3h', 'needs the open space read around each room (corridors, section 4)');
-  var pr = lab(/מדפסת|printer|\bprint|copy|צילום/i).map(function (l) { return [l.x0, l.y0, l.x1, l.y1]; }).concat(tagsOf(['printer']).map(tb));
-  if (pr.length) put('3i', 'yes', pr.length, zones(pr), pr, 'labels / tags'); else nd('3i', 'no printer label');
-  // ---- 4. corridors: not read yet
-  ['4a', '4b', '4c', '4d'].forEach(function (id) { nd(id, 'corridors are not traced yet'); });
-  nd('4e', 'paused by the user (C2 24)');
-  // ---- 5. room types: closed rooms with desks
-  var rt = { M: [], S: [], R: [], C: [], U: [] };
-  RL.forEach(function (r) {
-    var n = r.nd; if (!n || r.nonwork) return;
-    if (n >= 2 && r.mgr) { rt.U.push(r); return; }   // two manager desks in one area: two rooms read as one
-    if (n >= 2 && n <= 10) { r.rn = 'R' + n; rt.R.push(r); return; }
-    if (n !== 1) return;
-    var soft = rk(r, ['sofa', 'arm']), tbl = rk(r, ['mtable', 'table', 'ctable']), mch = rk(r, ['mchair']);
-    if (!r.tags.length) return;   // no furniture tags in the room: type not read
-    if (soft && !rk(r, ['mtable'])) rt.C.push(r);
-    else if (tbl || mch) rt.M.push(r);
-    else rt.S.push(r);
-  });
-  [['5a', rt.M], ['5b', rt.S], ['5d', rt.C]].forEach(function (p) {
-    if (p[1].length) put(p[0], 'yes', p[1].length, rloc(p[1]), p[1].map(function (r) { return r.b; }), 'closed room, 1 desk');
-    else nd(p[0], hasTags ? 'no closed room of this type found' : 'no furniture tags: room furniture not read');
-  });
-  if (rt.U.length) ['5a', '5b', '5d'].forEach(function (id) { var o = rows[id]; o.note = (o.note ? o.note + '; ' : '') + 'not read: ' + rloc(rt.U) + ' (two rooms drawn as one area)'; });
-  if (rt.R.length) {
-    var byN = {}; rt.R.forEach(function (r) { byN[r.rn] = (byN[r.rn] || 0) + 1; });
-    put('5c', 'yes', rt.R.length, rloc(rt.R), rt.R.map(function (r) { return r.b; }), Object.keys(byN).sort().map(function (k) { return byN[k] + ' × ' + k; }).join(', '));
-  } else nd('5c', 'no closed room with 2–10 desks found');
-  // ---- 6. open-space desks
-  var inRoom = {}; RL.forEach(function (r) { if (r.nd <= 10) r.desks.forEach(function (d) { inRoom[d.i] = 1; }); });
-  var os = D.filter(function (d) { return !inRoom[d.i]; }), par = os.map(function (_, i) { return i; });
-  function rt0(i) { while (par[i] !== i) i = par[i] = par[par[i]]; return i; }
-  os.forEach(function (a, i) { os.forEach(function (b, j) { if (j < i && a.b[0] < b.b[2] + 6 / f && b.b[0] < a.b[2] + 6 / f && a.b[1] < b.b[3] + 6 / f && b.b[1] < a.b[3] + 6 / f) par[rt0(i)] = rt0(j); }); });
-  var bn = {}; os.forEach(function (d, i) { var k = rt0(i), n = bn[k] ? bn[k].n : 0; bn[k] = ub(bn[k], d.b); bn[k].n = n + 1; });
-  var benches = Object.keys(bn).map(function (k) { return bn[k]; }).filter(function (b) { return b.n >= 2; }), nOS = benches.reduce(function (s, b) { return s + b.n; }, 0);
-  if (benches.length) put('6a', 'yes', nOS, zones(benches) + ' · ' + benches.length + ' benches', benches, 'desks on benches of 2+, outside closed rooms');
-  else put('6a', 'no', 0, '', [], '');
-  var osh = (L.osh || []).map(function (s) { return D[s - 1]; }).filter(Boolean);
-  put('6b', osh.length ? 'yes' : 'no', osh.length, osh.length ? zones(osh.map(function (d) { return d.b; })) : '', osh.map(function (d) { return d.b; }), 'from the OSH reading (C2 23)');
-  var ang = D.filter(function (d) { return Array.isArray(L.ang) && Math.abs(+L.ang[d.i] || 0) >= 0.5; });
-  put('6c', ang.length ? 'yes' : 'no', ang.length, ang.length ? zones(ang.map(function (d) { return d.b; })) : '', ang.map(function (d) { return d.b; }), 'desks drawn at an angle');
-  return { elv: EL_V, rows: EL_ROWS.map(function (r) { var o = rows[r[0]] || { found: 'nd', n: null, loc: '', boxes: [], note: '' }; o.id = r[0]; o.sec = r[1]; o.name = r[2]; return o; }) };
-}
-
-// door swings: circular arcs of 75–105° and 0.55–1.3 m radius: one curve, or a chain of short straight chords joined end to end
-function elSwings(R, mU) {
-  var out = [];
-  function fit(pts) {
-    if (pts.length < 4) return null;
-    var a = pts[0], m = pts[Math.floor(pts.length / 2)], b = pts[pts.length - 1], q = pts[Math.floor(pts.length / 4)];
-    var ac = elArc(a, m, b, q); if (!ac) return null;
-    if (pts.some(function (p) { return Math.abs(Math.hypot(p[0] - ac.c[0], p[1] - ac.c[1]) - ac.r) > 0.04 * ac.r; })) return null;
-    // the span through the middle point (an arc over 180° is not a door)
-    var t0 = Math.atan2(a[1] - ac.c[1], a[0] - ac.c[0]), tm = Math.atan2(m[1] - ac.c[1], m[0] - ac.c[0]), t1 = Math.atan2(b[1] - ac.c[1], b[0] - ac.c[0]);
-    function d(x, y) { var v = y - x; while (v < -Math.PI) v += 2 * Math.PI; while (v > Math.PI) v -= 2 * Math.PI; return v; }
-    var sp = Math.abs(d(t0, tm) + d(tm, t1)) * 180 / Math.PI, r = ac.r / mU;
-    if (sp < 75 || sp > 105 || r < 0.55 || r > 1.3) return null;
-    var bx = [ac.c[0], ac.c[1], ac.c[0], ac.c[1]]; pts.forEach(function (p) { bx = [Math.min(bx[0], p[0]), Math.min(bx[1], p[1]), Math.max(bx[2], p[0]), Math.max(bx[3], p[1])]; });
-    return { c: ac.c, r: ac.r, b: bx };
-  }
-  var seg = [];
-  R.paths.forEach(function (p) {
-    var c = p.stroke; if (!c || Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]) > 60) return;
-    p.lines.forEach(function (l) {
-      if (l.length >= 10) { var pts = []; for (var i = 0; i < l.length; i += 2) pts.push([l[i], l[i + 1]]); var f0 = fit(pts); if (f0) { out.push(f0); return; } }
-      for (var j = 0; j + 3 < l.length; j += 2) { var L0 = Math.hypot(l[j + 2] - l[j], l[j + 3] - l[j + 1]); if (L0 > 0.02 * mU && L0 < 0.3 * mU) seg.push([l[j], l[j + 1], l[j + 2], l[j + 3]]); }
-    });
-  });
-  // chains of chords: ends that meet (once each) are joined
-  function key(x, y) { return Math.round(x * 2) + ',' + Math.round(y * 2); }
-  var ends = {};
-  seg.forEach(function (q, i) { [key(q[0], q[1]), key(q[2], q[3])].forEach(function (k) { (ends[k] = ends[k] || []).push(i); }); });
-  var used = new Uint8Array(seg.length);
-  seg.forEach(function (q0, i0) {
-    if (used[i0]) return;
-    used[i0] = 1; var pts = [[q0[0], q0[1]], [q0[2], q0[3]]];
-    [true, false].forEach(function (fwd) {
-      var guard = 0;
-      while (guard++ < 200) {
-        var p = fwd ? pts[pts.length - 1] : pts[0], nx = (ends[key(p[0], p[1])] || []).filter(function (j) { return !used[j]; });
-        if (nx.length !== 1 || (ends[key(p[0], p[1])] || []).length > 2) break;
-        var q = seg[nx[0]]; used[nx[0]] = 1;
-        var o = key(q[0], q[1]) === key(p[0], p[1]) ? [q[2], q[3]] : [q[0], q[1]];
-        if (fwd) pts.push(o); else pts.unshift(o);
-      }
-    });
-    if (pts.length >= 5) { var f1 = fit(pts); if (f1) out.push(f1); }
-  });
-  // a whole circle drawn as quarter arcs (a round table) is not a door
-  return out.filter(function (a) { return out.filter(function (o) { return Math.hypot(o.c[0] - a.c[0], o.c[1] - a.c[1]) < 0.05 * a.r && Math.abs(o.r - a.r) < 0.05 * a.r; }).length < 3; });
-}
-// room numbers: whole numbers drawn inside a small box (four lines round the text)
-function elBoxed(R, mU) {
-  var hs = [], vs = [];
-  R.paths.forEach(function (p) {
-    if (!p.stroke) return;
-    p.lines.forEach(function (l) { for (var j = 0; j + 3 < l.length; j += 2) {
-      var x0 = l[j], y0 = l[j + 1], x1 = l[j + 2], y1 = l[j + 3], L0 = Math.hypot(x1 - x0, y1 - y0);
-      if (L0 < 0.1 * mU || L0 > 1 * mU) continue;
-      if (Math.abs(y1 - y0) < 0.3) hs.push([Math.min(x0, x1), Math.max(x0, x1), (y0 + y1) / 2]);
-      else if (Math.abs(x1 - x0) < 0.3) vs.push([Math.min(y0, y1), Math.max(y0, y1), (x0 + x1) / 2]);
-    } });
-  });
-  return R.text.filter(function (t) {
-    if (!/^\d{1,3}$/.test(t.s)) return false;
-    var x0 = t.x0, x1 = t.x1, y0 = t.y - t.fs, y1 = t.y, g = 0.4 * mU;
-    var up = hs.some(function (h) { return h[2] < y0 + 1 && h[2] > y0 - g && h[0] <= x0 + 0.5 && h[1] >= x1 - 0.5; });
-    var dn = hs.some(function (h) { return h[2] > y1 - 1 && h[2] < y1 + g && h[0] <= x0 + 0.5 && h[1] >= x1 - 0.5; });
-    var lf = vs.some(function (v) { return v[2] < x0 + 1 && v[2] > x0 - g && v[0] <= y0 + 0.5 && v[1] >= y1 - 0.5; });
-    var rt = vs.some(function (v) { return v[2] > x1 - 1 && v[2] < x1 + g && v[0] <= y0 + 0.5 && v[1] >= y1 - 0.5; });
-    return up && dn && lf && rt;
-  }).map(function (t) { return { s: t.s, c: [(t.x0 + t.x1) / 2, t.y - t.fs / 2] }; });
-}
 // the inventory of a PDF page for layout L (f = layout units per page point); saved as plan / current fields elements, elv
 function elOfPage(lib, page, L, f) {
-  return Promise.all([elRead(lib, page), pdfInk(lib, page)]).then(function (r) { return elInventory(r[0], L, f, r[1]); });
+  return pageRaw(lib, page, { el: 1, ink: 1 }).then(function (raw) { return brain('elements', raw, { L: { desks: L.desks, ang: L.ang, chairs: L.chairs, osh: L.osh }, f: f || 1 }); });
 }
 // layouts read before the inventory existed (or with an older one): read it from the stored PDF, once; desks, seat
 // numbers and OSH are not touched
@@ -2358,62 +1311,6 @@ function backfillElements(db) {
         return db.doc('plan/current').update({ elements: E, elv: EL_V });
       });
   }).catch(function () {});
-}
-// Teams = groups of desks less than 110 pt (about 2 m) apart. Numbered top to bottom, then left to right;
-// seats inside a team top to bottom, then left to right.
-// ang (optional): each desk's angle in degrees (a desk turned around its centre); kept in L.ang, in seat order
-// chairs (optional): each desk's chair [x, y] as read from the drawing (null = not found): kept in L.chairs in seat order,
-// the missing ones worked out by chairsFor
-function buildLayout(D, name, box, ang, chairs) {
-  D = D.map(function (d, i) { return [d[0], d[1], d[2], d[3], (ang && ang[i]) || 0, i]; });
-  var par = D.map(function (_, i) { return i; });
-  function f(i) { while (par[i] !== i) i = par[i] = par[par[i]]; return i; }
-  for (var i = 0; i < D.length; i++) for (var j = 0; j < i; j++) {
-    var a = D[i], b = D[j], gx = Math.max(0, Math.max(a[0], b[0]) - Math.min(a[2], b[2])), gy = Math.max(0, Math.max(a[1], b[1]) - Math.min(a[3], b[3]));
-    if (Math.sqrt(gx * gx + gy * gy) < 110) par[f(i)] = f(j);
-  }
-  var groups = {};
-  D.forEach(function (d, i) { (groups[f(i)] = groups[f(i)] || []).push(d); });
-  var G = Object.keys(groups).map(function (k) {
-    var ds = groups[k], x0 = Math.min.apply(null, ds.map(function (d) { return d[0]; })), y0 = Math.min.apply(null, ds.map(function (d) { return d[1]; }));
-    return { ds: ds, x0: x0, y0: y0 };
-  });
-  G.sort(function (a, b) { return Math.round(a.y0 / 250) - Math.round(b.y0 / 250) || a.x0 - b.x0; });
-  var E = [Infinity, Infinity, -Infinity, -Infinity];
-  D.forEach(function (d) { E[0] = Math.min(E[0], d[0]); E[1] = Math.min(E[1], d[1]); E[2] = Math.max(E[2], d[2]); E[3] = Math.max(E[3], d[3]); });
-  E = box ? [Math.floor(Math.min(E[0], box[0]) - 30), Math.floor(Math.min(E[1], box[1]) - 30), Math.ceil(Math.max(E[2], box[2]) + 30), Math.ceil(Math.max(E[3], box[3]) + 30)]
-    : [Math.floor(E[0] - 150), Math.floor(E[1] - 150), Math.ceil(E[2] + 150), Math.ceil(E[3] + 150)];
-  var out = [], sides = {}, outAng = [], outIdx = [];
-  G.forEach(function (g, ti) {
-    var t = ti + 1;
-    g.ds.sort(function (a, b) { return Math.round((a[1] + a[3]) / 60) - Math.round((b[1] + b[3]) / 60) || (a[0] - b[0]); });
-    g.ds.forEach(function (d) { out.push([d[0], d[1], d[2], d[3], 0]); outAng.push(d[4]); outIdx.push(d[5]); });   // no team until a program is uploaded or typed in
-    var b = [Infinity, Infinity, -Infinity, -Infinity];
-    g.ds.forEach(function (d) { b[0] = Math.min(b[0], d[0]); b[1] = Math.min(b[1], d[1]); b[2] = Math.max(b[2], d[2]); b[3] = Math.max(b[3], d[3]); });
-    sides[t] = sideOf(E, b, true);   // automatic layouts: every marker outside the building, on its nearest side
-  });
-  var base = String(name || 'New floor').replace(/\.[^.]+$/, '');
-  var L = { extent: E, margin: 250, desks: out, sides: sides, teams: G.length, heading: 'Layout · ' + base, desc: 'The ' + base + ' floor plan' };
-  if (outAng.some(function (a) { return Math.abs(a) >= 0.5; })) L.ang = outAng;
-  if (chairs && chairs.some(Boolean)) {
-    var guess = chairsFor(out, L.ang);
-    L.chairs = outIdx.map(function (k, i) { return chairs[k] || guess[i] || null; });
-  }
-  return L;
-}
-// the plan picture: the building area, grayscale, light greys to white, a few grey levels (small PNG)
-function planPicture(page, E, pf, asIs) {
-  var W = E[2] - E[0], H = E[3] - E[1], S = Math.min(1.5, Math.sqrt(14e6 / (W * H)));
-  var vp = page.getViewport({ scale: S * (pf || 1), offsetX: -E[0] * S, offsetY: -E[1] * S });
-  var c = document.createElement('canvas'); c.width = Math.round(W * S); c.height = Math.round(H * S);
-  var ctx = c.getContext('2d'); ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, c.width, c.height);
-  return page.render({ canvasContext: ctx, viewport: vp }).promise.then(function () {
-    if (asIs) return new Promise(function (ok, bad) { c.toBlob(function (b) { if (b) ok(b); else bad({ code: 'png' }); }, 'image/png'); });
-    var im = ctx.getImageData(0, 0, c.width, c.height), d = im.data;
-    for (var i = 0; i < d.length; i += 4) { var v = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; v = v > 235 ? 255 : Math.round(v / 51) * 51; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
-    ctx.putImageData(im, 0, 0);
-    return new Promise(function (ok, bad) { c.toBlob(function (b) { if (b) ok(b); else bad({ code: 'png' }); }, 'image/png'); });
-  });
 }
 // ---- The building's shell and core, read from the plan picture, for placing team markers.
 // Outside = everything reachable from the edge of the drawing without crossing a drawn line (walls, facade).
@@ -2558,17 +1455,16 @@ window.__autoLayout = function (file, db, recId) {
   loadPdf().then(function (l) { lib = l; return file.arrayBuffer(); })
     .then(function (buf) { return lib.getDocument({ data: new Uint8Array(buf) }).promise; })
     .then(function (pdf) { return pdf.getPage(1); })
-    .then(function (p) { page = p; return readDesks(lib, page); })
-    .then(function (R) {
-      var D = R.D;
-      if (D.length < 2) throw { code: 'nodesks' };
+    .then(function (p) { page = p; return pageRaw(lib, page, { A: 1, texts: 1, ink: 1, el: 1 }); })
+    .then(function (raw) { lnote('Analyzing ' + file.name + '… finding the desks', true); return readLayout(raw, file.name); })
+    .then(function (res) {
+      if (!res || res.error || !res.L) throw { code: (res && res.error) || 'brain' };
       // the uploaded drawing is kept as it is (whole page, its own colours, no outline or core drawn): only the desks are added
-      L = buildLayout(D, file.name, R.box, R.ang, R.chairs);
-      L.pscale = R.f; L.scale = R.n; L.asIs = true;
-      lnote('Found ' + D.length + ' desks. Drawing the plan…', true);
-      return oshFromPage(lib, page, R.f, L.desks, L.ang, L.chairs).then(function (res) { L.osh = res.osh; L.oshv = OSH_V; if (res.ask.length) L.flags = oshFlags([], res.ask); }, function () { L.osh = []; })
-        .then(function () { lnote('Found ' + D.length + ' desks. Listing the elements (C3)…', true); return elOfPage(lib, page, L, R.f).then(function (E) { L.elements = E; L.elv = EL_V; }, function () {}); })
-        .then(function () { return planPicture(page, L.extent, L.pscale, true); });
+      L = res.L;
+      var ask = L.ask || []; delete L.ask;
+      if (ask.length) L.flags = oshFlags([], ask);
+      lnote('Found ' + L.desks.length + ' desks. Drawing the plan…', true);
+      return planPicture(page, L.extent, L.pscale, true);
     })
     .then(function (png) { return window.claude.use('assets').then(function (a) { if (!a) throw { code: 'not_granted' }; return a.upload(png, { type: 'image/png' }); }); })
     .then(function (up) {
@@ -2586,7 +1482,8 @@ window.__autoLayout = function (file, db, recId) {
       ANALYZING = false;
       var c = e && e.code;
       if (recId) db.collection('layouts').doc(recId).update({ status: 'waiting for Claude' }).catch(function () {});
-      lnote(c === 'nodesks' ? 'No desks could be found in ' + file.name + '. Try a vector PDF of the floor plan.'
+      lnote(c === 'nobrain' ? 'Reading a layout works on edenstardust.com (this page is a preview).'
+        : c === 'nodesks' ? 'No desks could be found in ' + file.name + '. Try a vector PDF of the floor plan.'
         : c === 'not_granted' ? 'Saving the plan needs edit access to this page.'
         : c === 'load' ? 'The PDF reader could not load. Check the connection and upload again.'
         : 'The layout could not be analyzed automatically. Try a vector PDF of the floor plan.');
